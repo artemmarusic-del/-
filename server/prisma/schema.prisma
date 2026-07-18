@@ -1,0 +1,218 @@
+// Prisma schema for the diabetes companion app (ХЕ / insulin / food diary)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum DiabetesType {
+  TYPE_1
+  TYPE_2
+  GESTATIONAL
+  OTHER
+}
+
+enum TimeSegment {
+  MORNING // 06:00-11:00
+  DAY // 11:00-17:00
+  EVENING // 17:00-23:00
+  NIGHT // 23:00-06:00
+}
+
+enum GlucoseContext {
+  FASTING
+  BEFORE_MEAL
+  AFTER_MEAL
+  BEDTIME
+  NIGHT
+  RANDOM
+}
+
+enum InsulinType {
+  BOLUS_MEAL
+  BOLUS_CORRECTION
+  BASAL
+}
+
+enum AdjustmentField {
+  UNITS_PER_XE
+  CORRECTION_FACTOR
+}
+
+enum SuggestionStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  AUTO_APPLIED
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  profile           Profile?
+  foodItems         FoodItem[]
+  mealEntries       MealEntry[]
+  glucoseReadings   GlucoseReading[]
+  insulinDoses      InsulinDose[]
+  adjustmentLogs    CoefficientAdjustment[]
+}
+
+/// Individual physiological & dosing settings. Coefficients are split per
+/// time-of-day segment because insulin sensitivity commonly varies through
+/// the day (a core requirement: the app must adapt itself per-person).
+model Profile {
+  id       String @id @default(uuid())
+  userId   String @unique
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  diabetesType DiabetesType @default(TYPE_1)
+  weightKg     Float?
+  birthYear    Int?
+
+  targetGlucoseMin Float @default(4.4) // mmol/L
+  targetGlucoseMax Float @default(7.8) // mmol/L
+  xeGramsPerUnit   Float @default(10) // grams of carbs in 1 ХЕ (10-12 typical)
+  doseStepUnits    Float @default(1) // pen precision: 1 or 0.5
+  insulinActionHours Float @default(4) // rapid-acting insulin duration for IOB decay
+
+  // Углеводный коэффициент: units of rapid insulin per 1 ХЕ, per time segment
+  unitsPerXeMorning Float @default(1.5)
+  unitsPerXeDay     Float @default(1.2)
+  unitsPerXeEvening Float @default(1.5)
+  unitsPerXeNight   Float @default(1.2)
+
+  // Корректирующий фактор (ISF): mmol/L drop produced by 1 unit, per segment
+  correctionFactorMorning Float @default(2.5)
+  correctionFactorDay     Float @default(2.5)
+  correctionFactorEvening Float @default(2.5)
+  correctionFactorNight   Float @default(3.0)
+
+  basalDoseUnits Float? // optional daily basal/long-acting dose, informational
+
+  autoApplyAdaptation Boolean @default(false) // if false, suggestions require user confirmation
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Food reference data (per 100 g). Seeded with common foods; users can add their own.
+model FoodItem {
+  id            String  @id @default(uuid())
+  name          String
+  category      String  @default("Другое")
+  kcal100       Float
+  protein100    Float
+  fat100        Float
+  carbs100      Float
+  isCustom      Boolean @default(false)
+  createdByUserId String?
+  createdBy     User?   @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  mealItems MealItem[]
+
+  @@index([name])
+}
+
+model MealEntry {
+  id        String      @id @default(uuid())
+  userId    String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  eatenAt   DateTime
+  timeSegment TimeSegment
+  note      String?
+
+  totalCarbs   Float @default(0)
+  totalXe      Float @default(0)
+  totalKcal    Float @default(0)
+  totalProtein Float @default(0)
+  totalFat     Float @default(0)
+
+  items         MealItem[]
+  glucoseReadings GlucoseReading[]
+  insulinDoses  InsulinDose[]
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, eatenAt])
+}
+
+model MealItem {
+  id          String    @id @default(uuid())
+  mealEntryId String
+  mealEntry   MealEntry @relation(fields: [mealEntryId], references: [id], onDelete: Cascade)
+  foodItemId  String?
+  foodItem    FoodItem? @relation(fields: [foodItemId], references: [id], onDelete: SetNull)
+
+  foodName String // snapshot, kept even if food item is later edited/deleted
+  grams    Float
+
+  carbs   Float
+  protein Float
+  fat     Float
+  kcal    Float
+}
+
+model GlucoseReading {
+  id          String         @id @default(uuid())
+  userId      String
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  measuredAt  DateTime
+  value       Float // mmol/L
+  context     GlucoseContext @default(RANDOM)
+  treatment   String? // чем купировали низкий сахар (подкормка): сок, сахар и т.п.
+  mealEntryId String?
+  mealEntry   MealEntry?     @relation(fields: [mealEntryId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, measuredAt])
+}
+
+model InsulinDose {
+  id          String      @id @default(uuid())
+  userId      String
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  givenAt     DateTime
+  type        InsulinType
+  units       Float
+  calculatedUnits Float? // what the app suggested, for comparison
+  overrideReason  String?
+
+  mealEntryId String?
+  mealEntry   MealEntry? @relation(fields: [mealEntryId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, givenAt])
+}
+
+/// Audit trail for the self-adaptation engine: every proposed or applied
+/// change to a user's dosing coefficients, with the reasoning behind it.
+model CoefficientAdjustment {
+  id          String            @id @default(uuid())
+  userId      String
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  timeSegment TimeSegment
+  field       AdjustmentField
+  oldValue    Float
+  newValue    Float
+  reason      String
+  sampleSize  Int
+  status      SuggestionStatus  @default(PENDING)
+
+  createdAt   DateTime @default(now())
+  resolvedAt  DateTime?
+
+  @@index([userId, status])
+}

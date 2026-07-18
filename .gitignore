@@ -1,0 +1,14 @@
+node_modules
+dist
+.env
+*.log
+
+# Build artifacts of the Windows launcher
+ХЕ.Дневник.exe
+tools/*.exe
+
+# Local Claude Code settings (machine-specific)
+.claude/settings.local.json
+
+# TypeScript build info
+*.tsbuildinfo

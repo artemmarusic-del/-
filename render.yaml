@@ -1,0 +1,27 @@
+# Render Blueprint — деплой приложения одним веб-сервисом.
+# Express отдаёт и API (/api/*), и собранный React-сайт с одного адреса.
+# База данных — внешняя (Neon), её строка подключения задаётся в DATABASE_URL.
+services:
+  - type: web
+    name: xe-dnevnik
+    runtime: node
+    plan: free
+    region: virginia # ближе к Neon us-east-1; можно сменить
+    buildCommand: >-
+      npm --prefix client install --include=dev &&
+      npm --prefix client run build &&
+      npm --prefix server install --include=dev &&
+      npm --prefix server run build &&
+      npm --prefix server run prisma:deploy &&
+      npm --prefix server run seed
+    startCommand: npm --prefix server start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Строка подключения к Neon PostgreSQL — вставьте в панели Render.
+      - key: DATABASE_URL
+        sync: false
+      # Секрет для подписи токенов — Render сгенерирует автоматически.
+      - key: JWT_SECRET
+        generateValue: true
