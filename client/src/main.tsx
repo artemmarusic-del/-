@@ -11,3 +11,13 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     </BrowserRouter>
   </React.StrictMode>
 );
+
+// Регистрируем service worker — без него приложение нельзя установить
+// на телефон/компьютер. В режиме разработки не подключаем, чтобы не мешал.
+if ("serviceWorker" in navigator && import.meta.env.PROD) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch((err) => {
+      console.warn("Не удалось зарегистрировать service worker:", err);
+    });
+  });
+}

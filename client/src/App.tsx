@@ -13,6 +13,7 @@ import DiaryPage from "./pages/DiaryPage";
 import FoodsPage from "./pages/FoodsPage";
 import StatsPage from "./pages/StatsPage";
 import SettingsPage from "./pages/SettingsPage";
+import DownloadsPage from "./pages/DownloadsPage";
 
 export default function App() {
   const init = useAuthStore((s) => s.init);
@@ -27,6 +28,8 @@ export default function App() {
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
+      {/* Публичная: скачать приложение можно и без входа в аккаунт */}
+      <Route path="/downloads" element={<DownloadsPage />} />
       <Route path="/onboarding" element={<OnboardingPage />} />
 
       <Route element={<ProtectedRoute />}>

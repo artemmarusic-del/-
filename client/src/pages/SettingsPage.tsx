@@ -1,4 +1,5 @@
 import { ReactNode, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { useAuthStore } from "../store/authStore";
 import ProfilesManager from "../components/ProfilesManager";
@@ -90,6 +91,21 @@ export default function SettingsPage() {
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Настройки</h1>
+
+      <Link
+        to="/downloads"
+        className="card flex items-center justify-between gap-3 transition hover:border-brand-300"
+      >
+        <div>
+          <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+            📱 Установить приложение
+          </h2>
+          <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
+            Android, Windows и iPhone — с иконкой на рабочем столе и общими данными
+          </p>
+        </div>
+        <span className="shrink-0 font-semibold text-brand-600">Открыть →</span>
+      </Link>
 
       <ProfilesManager />
 
