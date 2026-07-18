@@ -64,6 +64,21 @@ model User {
   glucoseReadings   GlucoseReading[]
   insulinDoses      InsulinDose[]
   adjustmentLogs    CoefficientAdjustment[]
+  passwordResets    PasswordResetToken[]
+}
+
+/// One-time, time-limited tokens for the "forgot password" flow. Only a hash
+/// of the token is stored, so a DB leak cannot be used to reset passwords.
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 /// Individual physiological & dosing settings. Coefficients are split per

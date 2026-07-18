@@ -25,3 +25,18 @@ services:
       # Секрет для подписи токенов — Render сгенерирует автоматически.
       - key: JWT_SECRET
         generateValue: true
+      # Публичный адрес приложения (для ссылок в письмах).
+      - key: APP_URL
+        value: https://xe-dnevnik.onrender.com
+      # Почта для писем восстановления пароля — задаются вручную в панели Render.
+      # Без них ссылка сброса просто пишется в лог сервера.
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false

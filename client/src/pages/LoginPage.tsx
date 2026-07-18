@@ -52,7 +52,12 @@ export default function LoginPage() {
           />
         </div>
         {error && <p className="text-sm text-accent-600">{error}</p>}
-        <button type="submit" className="btn-primary mt-2 w-full" disabled={loading}>
+        <div className="text-right">
+          <Link to="/forgot-password" className="text-xs font-medium text-brand-600 hover:underline">
+            Забыли пароль?
+          </Link>
+        </div>
+        <button type="submit" className="btn-primary mt-1 w-full" disabled={loading}>
           {loading ? "Входим…" : "Войти"}
         </button>
       </form>

@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
@@ -8,6 +9,11 @@ import { requireAuth } from "../middleware/auth";
 import { HttpError } from "../middleware/errorHandler";
 import { comparePassword, hashPassword } from "../utils/password";
 import { signToken } from "../utils/jwt";
+import { sendPasswordResetEmail } from "../services/emailService";
+
+function hashToken(token: string): string {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
 
 const router = Router();
 
@@ -81,6 +87,74 @@ router.post(
     const token = signToken({ userId: user.id });
     setAuthCookie(res, token);
     res.json({ id: user.id, email: user.email, name: user.name });
+  })
+);
+
+const forgotSchema = z.object({ email: z.string().email() });
+
+router.post(
+  "/forgot-password",
+  authLimiter,
+  asyncHandler(async (req, res) => {
+    const { email } = forgotSchema.parse(req.body);
+    const user = await prisma.user.findUnique({ where: { email } });
+
+    // Always respond the same way, whether or not the email exists, to avoid
+    // revealing which emails are registered (user enumeration).
+    if (user) {
+      const rawToken = crypto.randomBytes(32).toString("hex");
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+      await prisma.passwordResetToken.create({
+        data: { userId: user.id, tokenHash: hashToken(rawToken), expiresAt },
+      });
+      const resetUrl = `${env.appUrl}/reset-password?token=${rawToken}`;
+      try {
+        await sendPasswordResetEmail(user.email, resetUrl);
+      } catch (err) {
+        console.error("[email] Не удалось отправить письмо сброса:", err);
+      }
+    }
+
+    res.json({
+      message:
+        "Если аккаунт с таким email существует, на него отправлено письмо со ссылкой для сброса пароля.",
+    });
+  })
+);
+
+const resetSchema = z.object({
+  token: z.string().min(10),
+  password: z.string().min(8, "Пароль должен содержать не менее 8 символов"),
+});
+
+router.post(
+  "/reset-password",
+  authLimiter,
+  asyncHandler(async (req, res) => {
+    const { token, password } = resetSchema.parse(req.body);
+    const record = await prisma.passwordResetToken.findUnique({
+      where: { tokenHash: hashToken(token) },
+    });
+
+    if (!record || record.usedAt || record.expiresAt < new Date()) {
+      throw new HttpError(400, "Ссылка недействительна или устарела. Запросите сброс пароля заново.");
+    }
+
+    const passwordHash = await hashPassword(password);
+    await prisma.$transaction([
+      prisma.user.update({ where: { id: record.userId }, data: { passwordHash } }),
+      prisma.passwordResetToken.update({
+        where: { id: record.id },
+        data: { usedAt: new Date() },
+      }),
+      // Invalidate any other outstanding reset tokens for this user.
+      prisma.passwordResetToken.updateMany({
+        where: { userId: record.userId, usedAt: null },
+        data: { usedAt: new Date() },
+      }),
+    ]);
+
+    res.json({ message: "Пароль изменён. Теперь войдите с новым паролем." });
   })
 );
 
