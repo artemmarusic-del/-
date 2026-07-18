@@ -15,6 +15,8 @@ export interface User {
 export interface Profile {
   id: string;
   userId: string;
+  /** Имя отслеживаемого человека: «Мама», «Ваня» и т.п. */
+  name: string;
   diabetesType: DiabetesType;
   weightKg: number | null;
   birthYear: number | null;

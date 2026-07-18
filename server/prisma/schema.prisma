@@ -58,12 +58,10 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  profile           Profile?
+  /// One account can track several people (e.g. a parent and their child):
+  /// each tracked person is a Profile with its own diary and coefficients.
+  profiles          Profile[]
   foodItems         FoodItem[]
-  mealEntries       MealEntry[]
-  glucoseReadings   GlucoseReading[]
-  insulinDoses      InsulinDose[]
-  adjustmentLogs    CoefficientAdjustment[]
   passwordResets    PasswordResetToken[]
 }
 
@@ -81,13 +79,16 @@ model PasswordResetToken {
   @@index([userId])
 }
 
-/// Individual physiological & dosing settings. Coefficients are split per
-/// time-of-day segment because insulin sensitivity commonly varies through
-/// the day (a core requirement: the app must adapt itself per-person).
+/// A tracked person (the account owner, their child, etc.) with their own
+/// diary and dosing settings. Coefficients are split per time-of-day segment
+/// because insulin sensitivity commonly varies through the day.
 model Profile {
   id       String @id @default(uuid())
-  userId   String @unique
+  userId   String
   user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Display name shown in the profile switcher, e.g. "Мама", "Ваня".
+  name     String
 
   diabetesType DiabetesType @default(TYPE_1)
   weightKg     Float?
@@ -117,6 +118,13 @@ model Profile {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  mealEntries     MealEntry[]
+  glucoseReadings GlucoseReading[]
+  insulinDoses    InsulinDose[]
+  adjustmentLogs  CoefficientAdjustment[]
+
+  @@index([userId])
 }
 
 /// Food reference data (per 100 g). Seeded with common foods; users can add their own.
@@ -141,8 +149,8 @@ model FoodItem {
 
 model MealEntry {
   id        String      @id @default(uuid())
-  userId    String
-  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profileId String
+  profile   Profile     @relation(fields: [profileId], references: [id], onDelete: Cascade)
   eatenAt   DateTime
   timeSegment TimeSegment
   note      String?
@@ -159,7 +167,7 @@ model MealEntry {
 
   createdAt DateTime @default(now())
 
-  @@index([userId, eatenAt])
+  @@index([profileId, eatenAt])
 }
 
 model MealItem {
@@ -180,8 +188,8 @@ model MealItem {
 
 model GlucoseReading {
   id          String         @id @default(uuid())
-  userId      String
-  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profileId   String
+  profile     Profile        @relation(fields: [profileId], references: [id], onDelete: Cascade)
   measuredAt  DateTime
   value       Float // mmol/L
   context     GlucoseContext @default(RANDOM)
@@ -191,13 +199,13 @@ model GlucoseReading {
 
   createdAt DateTime @default(now())
 
-  @@index([userId, measuredAt])
+  @@index([profileId, measuredAt])
 }
 
 model InsulinDose {
   id          String      @id @default(uuid())
-  userId      String
-  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profileId   String
+  profile     Profile     @relation(fields: [profileId], references: [id], onDelete: Cascade)
   givenAt     DateTime
   type        InsulinType
   units       Float
@@ -209,15 +217,15 @@ model InsulinDose {
 
   createdAt DateTime @default(now())
 
-  @@index([userId, givenAt])
+  @@index([profileId, givenAt])
 }
 
 /// Audit trail for the self-adaptation engine: every proposed or applied
 /// change to a user's dosing coefficients, with the reasoning behind it.
 model CoefficientAdjustment {
   id          String            @id @default(uuid())
-  userId      String
-  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profileId   String
+  profile     Profile           @relation(fields: [profileId], references: [id], onDelete: Cascade)
   timeSegment TimeSegment
   field       AdjustmentField
   oldValue    Float
@@ -229,5 +237,5 @@ model CoefficientAdjustment {
   createdAt   DateTime @default(now())
   resolvedAt  DateTime?
 
-  @@index([userId, status])
+  @@index([profileId, status])
 }

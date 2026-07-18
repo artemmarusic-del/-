@@ -1,9 +1,14 @@
 import { create } from "zustand";
-import { api } from "../api/client";
+import { api, setActiveProfileHeader } from "../api/client";
 import { Profile, User } from "../types";
+
+const ACTIVE_PROFILE_KEY = "xe-active-profile";
 
 interface AuthState {
   user: User | null;
+  /** All tracked people of this account (e.g. mother and child). */
+  profiles: Profile[];
+  /** The one currently being viewed/edited. */
   profile: Profile | null;
   status: "idle" | "loading" | "ready";
   error: string | null;
@@ -11,12 +16,20 @@ interface AuthState {
   login: (email: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
-  loadProfile: () => Promise<void>;
+  loadProfiles: () => Promise<void>;
+  switchProfile: (profileId: string) => void;
   setProfile: (profile: Profile) => void;
+}
+
+function pickActive(profiles: Profile[]): Profile | null {
+  if (profiles.length === 0) return null;
+  const savedId = localStorage.getItem(ACTIVE_PROFILE_KEY);
+  return profiles.find((p) => p.id === savedId) ?? profiles[0];
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
+  profiles: [],
   profile: null,
   status: "idle",
   error: null,
@@ -25,12 +38,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ status: "loading" });
     try {
       const user = await api.get<User>("/auth/me");
-      // Load the profile BEFORE flipping status to "ready", otherwise the
-      // router briefly sees user-without-profile and redirects to onboarding.
+      // Load profiles BEFORE flipping status to "ready", otherwise the router
+      // briefly sees user-without-profile and redirects to onboarding.
       if (user.hasProfile) {
         try {
-          const profile = await api.get<Profile>("/profile");
-          set({ profile });
+          await get().loadProfiles();
         } catch {
           // ignore - onboarding will handle a genuinely missing profile
         }
@@ -46,9 +58,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const user = await api.post<User>("/auth/login", { email, password });
     set({ user });
     try {
-      await get().loadProfile();
+      await get().loadProfiles();
     } catch {
-      // profile not created yet - onboarding will handle it
+      // no profile yet - onboarding will handle it
     }
   },
 
@@ -60,13 +72,29 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   logout: async () => {
     await api.post("/auth/logout");
-    set({ user: null, profile: null });
+    setActiveProfileHeader(null);
+    set({ user: null, profiles: [], profile: null });
   },
 
-  loadProfile: async () => {
-    const profile = await api.get<Profile>("/profile");
-    set({ profile });
+  loadProfiles: async () => {
+    const profiles = await api.get<Profile[]>("/profiles");
+    const active = pickActive(profiles);
+    setActiveProfileHeader(active?.id ?? null);
+    if (active) localStorage.setItem(ACTIVE_PROFILE_KEY, active.id);
+    set({ profiles, profile: active });
   },
 
-  setProfile: (profile) => set({ profile }),
+  switchProfile: (profileId) => {
+    const target = get().profiles.find((p) => p.id === profileId);
+    if (!target) return;
+    localStorage.setItem(ACTIVE_PROFILE_KEY, target.id);
+    setActiveProfileHeader(target.id);
+    set({ profile: target });
+  },
+
+  setProfile: (profile) =>
+    set((state) => ({
+      profile,
+      profiles: state.profiles.map((p) => (p.id === profile.id ? profile : p)),
+    })),
 }));

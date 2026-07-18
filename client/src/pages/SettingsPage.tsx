@@ -1,6 +1,7 @@
 import { ReactNode, useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuthStore } from "../store/authStore";
+import ProfilesManager from "../components/ProfilesManager";
 import { CoefficientAdjustment, Profile } from "../types";
 
 const segmentLabels: Record<string, string> = {
@@ -16,7 +17,7 @@ const fieldLabels: Record<string, string> = {
 };
 
 export default function SettingsPage() {
-  const { profile, setProfile } = useAuthStore();
+  const { profile, setProfile, loadProfiles } = useAuthStore();
   const [form, setForm] = useState<Profile | null>(profile);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -37,9 +38,10 @@ export default function SettingsPage() {
     setHistory(h);
   }
 
+  // Suggestions belong to the active profile — reload them when it changes.
   useEffect(() => {
     loadSuggestions();
-  }, []);
+  }, [profile?.id]);
 
   function update<K extends keyof Profile>(key: K, value: Profile[K]) {
     setForm((f) => (f ? { ...f, [key]: value } : f));
@@ -50,7 +52,7 @@ export default function SettingsPage() {
     setSaving(true);
     setMessage(null);
     try {
-      const updated = await api.put<Profile>("/profile", form);
+      const updated = await api.put<Profile>(`/profiles/${form.id}`, form);
       setProfile(updated);
       setMessage("Сохранено");
     } catch (err) {
@@ -74,8 +76,8 @@ export default function SettingsPage() {
   async function accept(id: string) {
     await api.post(`/adaptation/suggestions/${id}/accept`);
     await loadSuggestions();
-    const updated = await api.get<Profile>("/profile");
-    setProfile(updated);
+    // The engine changed this profile's coefficients — refresh them.
+    await loadProfiles();
   }
 
   async function reject(id: string) {
@@ -88,6 +90,8 @@ export default function SettingsPage() {
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Настройки</h1>
+
+      <ProfilesManager />
 
       <div className="card">
         <div className="mb-3 flex items-center justify-between">

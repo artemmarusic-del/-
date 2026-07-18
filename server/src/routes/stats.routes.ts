@@ -1,10 +1,12 @@
 import { Router } from "express";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { requireAuth } from "../middleware/auth";
+import { resolveProfile } from "../middleware/activeProfile";
 import { getGlucoseSeries, getSummary, getXeSeries } from "../services/statsService";
 
 const router = Router();
 router.use(requireAuth);
+router.use(resolveProfile);
 
 function parseDays(req: import("express").Request): number {
   const raw = Number(req.query.days ?? 14);
@@ -15,21 +17,21 @@ function parseDays(req: import("express").Request): number {
 router.get(
   "/summary",
   asyncHandler(async (req, res) => {
-    res.json(await getSummary(req.userId!, parseDays(req)));
+    res.json(await getSummary(req.profileId!, parseDays(req)));
   })
 );
 
 router.get(
   "/glucose",
   asyncHandler(async (req, res) => {
-    res.json(await getGlucoseSeries(req.userId!, parseDays(req)));
+    res.json(await getGlucoseSeries(req.profileId!, parseDays(req)));
   })
 );
 
 router.get(
   "/xe",
   asyncHandler(async (req, res) => {
-    res.json(await getXeSeries(req.userId!, parseDays(req)));
+    res.json(await getXeSeries(req.profileId!, parseDays(req)));
   })
 );
 

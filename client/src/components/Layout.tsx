@@ -1,5 +1,6 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { useAuthStore } from "../store/authStore";
+import ProfileSwitcher from "./ProfileSwitcher";
 
 const navItems = [
   { to: "/", label: "Сегодня", icon: "🏠", end: true },
@@ -24,6 +25,10 @@ export default function Layout() {
               <div className="text-sm font-bold leading-tight text-slate-800 dark:text-slate-100">ХЕ.Дневник</div>
               <div className="text-xs text-slate-400">учёт диабета</div>
             </div>
+          </div>
+
+          <div className="mb-4">
+            <ProfileSwitcher />
           </div>
 
           <nav className="flex flex-1 flex-col gap-1">
@@ -56,13 +61,15 @@ export default function Layout() {
 
         <div className="flex min-h-screen w-full flex-col">
           <header className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white/80 px-4 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-900/70 md:hidden">
-            <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-600 text-sm font-bold text-white">
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-sm font-bold text-white">
                 ХЕ
               </div>
-              <span className="font-bold text-slate-800 dark:text-slate-100">ХЕ.Дневник</span>
+              <div className="min-w-0 max-w-[190px] flex-1">
+                <ProfileSwitcher compact />
+              </div>
             </div>
-            <button onClick={() => logout()} className="btn-ghost px-2 py-1 text-xs">
+            <button onClick={() => logout()} className="btn-ghost shrink-0 px-2 py-1 text-xs">
               Выйти
             </button>
           </header>

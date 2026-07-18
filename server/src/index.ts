@@ -37,7 +37,7 @@ app.use(cookieParser());
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
 
 app.use("/api/auth", authRoutes);
-app.use("/api/profile", profileRoutes);
+app.use("/api/profiles", profileRoutes);
 app.use("/api/foods", foodsRoutes);
 app.use("/api/diary", diaryRoutes);
 app.use("/api/insulin", insulinRoutes);

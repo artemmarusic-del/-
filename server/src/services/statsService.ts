@@ -1,14 +1,14 @@
 import { prisma } from "../db";
 
-export async function getSummary(userId: string, days: number) {
+export async function getSummary(profileId: string, days: number) {
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-  const profile = await prisma.profile.findUnique({ where: { userId } });
+  const profile = await prisma.profile.findUnique({ where: { id: profileId } });
   const readings = await prisma.glucoseReading.findMany({
-    where: { userId, measuredAt: { gte: since } },
+    where: { profileId, measuredAt: { gte: since } },
     orderBy: { measuredAt: "asc" },
   });
   const meals = await prisma.mealEntry.findMany({
-    where: { userId, eatenAt: { gte: since } },
+    where: { profileId, eatenAt: { gte: since } },
   });
 
   const targetMin = profile?.targetGlucoseMin ?? 4.4;
@@ -42,19 +42,19 @@ export async function getSummary(userId: string, days: number) {
   };
 }
 
-export async function getGlucoseSeries(userId: string, days: number) {
+export async function getGlucoseSeries(profileId: string, days: number) {
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
   return prisma.glucoseReading.findMany({
-    where: { userId, measuredAt: { gte: since } },
+    where: { profileId, measuredAt: { gte: since } },
     orderBy: { measuredAt: "asc" },
     select: { id: true, measuredAt: true, value: true, context: true },
   });
 }
 
-export async function getXeSeries(userId: string, days: number) {
+export async function getXeSeries(profileId: string, days: number) {
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
   const meals = await prisma.mealEntry.findMany({
-    where: { userId, eatenAt: { gte: since } },
+    where: { profileId, eatenAt: { gte: since } },
     select: { eatenAt: true, totalXe: true, totalCarbs: true },
     orderBy: { eatenAt: "asc" },
   });

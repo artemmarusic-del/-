@@ -9,7 +9,8 @@ import { HttpError } from "../middleware/errorHandler";
 const router = Router();
 router.use(requireAuth);
 
-const profileSchema = z.object({
+const settingsSchema = z.object({
+  name: z.string().min(1).max(60),
   diabetesType: z.nativeEnum(DiabetesType).default(DiabetesType.TYPE_1),
   weightKg: z.number().positive().max(400).nullable().optional(),
   birthYear: z.number().int().min(1900).max(new Date().getFullYear()).nullable().optional(),
@@ -30,29 +31,30 @@ const profileSchema = z.object({
   autoApplyAdaptation: z.boolean().default(false),
 });
 
-const updateSchema = profileSchema.partial();
+const updateSchema = settingsSchema.partial();
 
+/** All profiles (tracked people) of the signed-in account. */
 router.get(
   "/",
   asyncHandler(async (req, res) => {
-    const profile = await prisma.profile.findUnique({ where: { userId: req.userId! } });
-    if (!profile) {
-      throw new HttpError(404, "Профиль ещё не создан");
-    }
-    res.json(profile);
+    const profiles = await prisma.profile.findMany({
+      where: { userId: req.userId! },
+      orderBy: { createdAt: "asc" },
+    });
+    res.json(profiles);
   })
 );
 
 router.post(
   "/",
   asyncHandler(async (req, res) => {
-    const existing = await prisma.profile.findUnique({ where: { userId: req.userId! } });
-    if (existing) {
-      throw new HttpError(409, "Профиль уже существует");
-    }
-    const data = profileSchema.parse(req.body);
+    const data = settingsSchema.parse(req.body);
     if (data.targetGlucoseMin >= data.targetGlucoseMax) {
       throw new HttpError(400, "Нижняя граница целевого диапазона должна быть меньше верхней");
+    }
+    const count = await prisma.profile.count({ where: { userId: req.userId! } });
+    if (count >= 10) {
+      throw new HttpError(400, "Достигнут предел: не более 10 профилей на аккаунт");
     }
     const profile = await prisma.profile.create({
       data: { ...data, userId: req.userId! },
@@ -62,23 +64,41 @@ router.post(
 );
 
 router.put(
-  "/",
+  "/:id",
   asyncHandler(async (req, res) => {
+    const existing = await prisma.profile.findFirst({
+      where: { id: req.params.id, userId: req.userId! },
+    });
+    if (!existing) throw new HttpError(404, "Профиль не найден");
+
     const data = updateSchema.parse(req.body);
-    const existing = await prisma.profile.findUnique({ where: { userId: req.userId! } });
-    if (!existing) {
-      throw new HttpError(404, "Профиль ещё не создан");
-    }
     const min = data.targetGlucoseMin ?? existing.targetGlucoseMin;
     const max = data.targetGlucoseMax ?? existing.targetGlucoseMax;
     if (min >= max) {
       throw new HttpError(400, "Нижняя граница целевого диапазона должна быть меньше верхней");
     }
-    const profile = await prisma.profile.update({
-      where: { userId: req.userId! },
-      data,
-    });
+
+    const profile = await prisma.profile.update({ where: { id: existing.id }, data });
     res.json(profile);
+  })
+);
+
+/** Deleting a profile also deletes that person's whole diary (cascade). */
+router.delete(
+  "/:id",
+  asyncHandler(async (req, res) => {
+    const existing = await prisma.profile.findFirst({
+      where: { id: req.params.id, userId: req.userId! },
+    });
+    if (!existing) throw new HttpError(404, "Профиль не найден");
+
+    const count = await prisma.profile.count({ where: { userId: req.userId! } });
+    if (count <= 1) {
+      throw new HttpError(400, "Нельзя удалить единственный профиль");
+    }
+
+    await prisma.profile.delete({ where: { id: existing.id } });
+    res.status(204).send();
   })
 );
 

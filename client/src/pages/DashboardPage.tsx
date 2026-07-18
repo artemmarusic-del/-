@@ -30,9 +30,10 @@ export default function DashboardPage() {
     setPending(p);
   }
 
+  // Reload when the user switches to another tracked person.
   useEffect(() => {
     refresh();
-  }, []);
+  }, [profile?.id]);
 
   if (!profile) return null;
 

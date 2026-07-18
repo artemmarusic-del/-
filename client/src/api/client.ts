@@ -13,12 +13,22 @@ export class ApiError extends Error {
   }
 }
 
+// Which tracked person (profile) the requests apply to. Set by the auth store
+// when the user switches profiles; sent with every request so the server scopes
+// the diary, stats and dose calculations to that person.
+let activeProfileId: string | null = null;
+
+export function setActiveProfileHeader(profileId: string | null) {
+  activeProfileId = profileId;
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     ...options,
     credentials: "include",
     headers: {
       ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...(activeProfileId ? { "X-Profile-Id": activeProfileId } : {}),
       ...options.headers,
     },
   });

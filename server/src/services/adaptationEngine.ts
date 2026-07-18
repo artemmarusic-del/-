@@ -82,10 +82,10 @@ function average(nums: number[]): number {
   return nums.reduce((a, b) => a + b, 0) / nums.length;
 }
 
-async function canAdjust(userId: string, segment: TimeSegment, field: AdjustmentField): Promise<boolean> {
+async function canAdjust(profileId: string, segment: TimeSegment, field: AdjustmentField): Promise<boolean> {
   const last = await prisma.coefficientAdjustment.findFirst({
     where: {
-      userId,
+      profileId,
       timeSegment: segment,
       field,
       status: { in: [SuggestionStatus.ACCEPTED, SuggestionStatus.AUTO_APPLIED] },
@@ -104,17 +104,17 @@ async function canAdjust(userId: string, segment: TimeSegment, field: Adjustment
  * lows — this is what lets the app "self-tune" to each person's own insulin
  * sensitivity instead of using one fixed formula for everyone.
  */
-export async function analyzeAndProposeAdjustments(userId: string): Promise<ProposedChange[]> {
-  const profile = await prisma.profile.findUnique({ where: { userId } });
+export async function analyzeAndProposeAdjustments(profileId: string): Promise<ProposedChange[]> {
+  const profile = await prisma.profile.findUnique({ where: { id: profileId } });
   if (!profile) return [];
 
   const since = new Date(Date.now() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
 
   const [meals, glucoseReadings, corrections] = await Promise.all([
-    prisma.mealEntry.findMany({ where: { userId, eatenAt: { gte: since } } }),
-    prisma.glucoseReading.findMany({ where: { userId, measuredAt: { gte: since } } }),
+    prisma.mealEntry.findMany({ where: { profileId, eatenAt: { gte: since } } }),
+    prisma.glucoseReading.findMany({ where: { profileId, measuredAt: { gte: since } } }),
     prisma.insulinDose.findMany({
-      where: { userId, givenAt: { gte: since }, type: InsulinType.BOLUS_CORRECTION },
+      where: { profileId, givenAt: { gte: since }, type: InsulinType.BOLUS_CORRECTION },
     }),
   ]);
 
@@ -142,7 +142,7 @@ export async function analyzeAndProposeAdjustments(userId: string): Promise<Prop
       }
     }
 
-    if (deviations.length >= MIN_SAMPLES && (await canAdjust(userId, segment, AdjustmentField.UNITS_PER_XE))) {
+    if (deviations.length >= MIN_SAMPLES && (await canAdjust(profileId, segment, AdjustmentField.UNITS_PER_XE))) {
       const avgDeviation = average(deviations);
       const field = unitsPerXeField(segment);
       const oldValue = profile[field] as number;
@@ -202,7 +202,7 @@ export async function analyzeAndProposeAdjustments(userId: string): Promise<Prop
       actualFactors.push(actualDrop / dose.units);
     }
 
-    if (actualFactors.length >= MIN_SAMPLES && (await canAdjust(userId, segment, AdjustmentField.CORRECTION_FACTOR))) {
+    if (actualFactors.length >= MIN_SAMPLES && (await canAdjust(profileId, segment, AdjustmentField.CORRECTION_FACTOR))) {
       const avgActualFactor = average(actualFactors);
       const field = correctionFactorField(segment);
       const oldValue = profile[field] as number;
@@ -246,7 +246,7 @@ export async function analyzeAndProposeAdjustments(userId: string): Promise<Prop
     proposals.map((p) =>
       prisma.coefficientAdjustment.create({
         data: {
-          userId,
+          profileId,
           timeSegment: p.segment,
           field: p.field,
           oldValue: p.oldValue,
@@ -261,13 +261,13 @@ export async function analyzeAndProposeAdjustments(userId: string): Promise<Prop
   );
 
   if (profile.autoApplyAdaptation) {
-    await applyAdjustments(userId, created);
+    await applyAdjustments(profileId, created);
   }
 
   return proposals;
 }
 
-async function applyAdjustments(userId: string, adjustments: { field: AdjustmentField; timeSegment: TimeSegment; newValue: number }[]) {
+async function applyAdjustments(profileId: string, adjustments: { field: AdjustmentField; timeSegment: TimeSegment; newValue: number }[]) {
   const data: Record<string, number> = {};
   for (const adj of adjustments) {
     const fieldName =
@@ -276,24 +276,24 @@ async function applyAdjustments(userId: string, adjustments: { field: Adjustment
         : correctionFactorField(adj.timeSegment);
     data[fieldName as string] = adj.newValue;
   }
-  await prisma.profile.update({ where: { userId }, data });
+  await prisma.profile.update({ where: { id: profileId }, data });
 }
 
-export async function acceptAdjustment(userId: string, adjustmentId: string) {
+export async function acceptAdjustment(profileId: string, adjustmentId: string) {
   const adjustment = await prisma.coefficientAdjustment.findUnique({ where: { id: adjustmentId } });
-  if (!adjustment || adjustment.userId !== userId || adjustment.status !== SuggestionStatus.PENDING) {
+  if (!adjustment || adjustment.profileId !== profileId || adjustment.status !== SuggestionStatus.PENDING) {
     return null;
   }
-  await applyAdjustments(userId, [adjustment]);
+  await applyAdjustments(profileId, [adjustment]);
   return prisma.coefficientAdjustment.update({
     where: { id: adjustmentId },
     data: { status: SuggestionStatus.ACCEPTED, resolvedAt: new Date() },
   });
 }
 
-export async function rejectAdjustment(userId: string, adjustmentId: string) {
+export async function rejectAdjustment(profileId: string, adjustmentId: string) {
   const adjustment = await prisma.coefficientAdjustment.findUnique({ where: { id: adjustmentId } });
-  if (!adjustment || adjustment.userId !== userId || adjustment.status !== SuggestionStatus.PENDING) {
+  if (!adjustment || adjustment.profileId !== profileId || adjustment.status !== SuggestionStatus.PENDING) {
     return null;
   }
   return prisma.coefficientAdjustment.update({

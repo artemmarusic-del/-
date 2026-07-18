@@ -174,7 +174,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const user = await prisma.user.findUnique({
       where: { id: req.userId },
-      include: { profile: true },
+      include: { profiles: { select: { id: true } } },
     });
     if (!user) {
       throw new HttpError(404, "Пользователь не найден");
@@ -183,7 +183,7 @@ router.get(
       id: user.id,
       email: user.email,
       name: user.name,
-      hasProfile: !!user.profile,
+      hasProfile: user.profiles.length > 0,
     });
   })
 );

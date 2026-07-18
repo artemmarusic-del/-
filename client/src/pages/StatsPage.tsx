@@ -30,7 +30,8 @@ export default function StatsPage() {
       setGlucose(g);
       setXe(x);
     });
-  }, [days]);
+    // Also refetch when switching to another tracked person.
+  }, [days, profile?.id]);
 
   if (!profile) return null;
 

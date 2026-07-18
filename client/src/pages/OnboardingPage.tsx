@@ -13,9 +13,10 @@ const diabetesLabels: Record<DiabetesType, string> = {
 };
 
 export default function OnboardingPage() {
-  const setProfile = useAuthStore((s) => s.setProfile);
+  const { user, loadProfiles } = useAuthStore();
   const navigate = useNavigate();
 
+  const [name, setName] = useState("");
   const [diabetesType, setDiabetesType] = useState<DiabetesType>("TYPE_1");
   const [weightKg, setWeightKg] = useState("");
   const [targetMin, setTargetMin] = useState("4.4");
@@ -33,7 +34,8 @@ export default function OnboardingPage() {
     try {
       const upx = Number(unitsPerXe);
       const cf = Number(correctionFactor);
-      const profile = await api.post<Profile>("/profile", {
+      await api.post<Profile>("/profiles", {
+        name: name.trim() || user?.name || "Основной профиль",
         diabetesType,
         weightKg: weightKg ? Number(weightKg) : null,
         targetGlucoseMin: Number(targetMin),
@@ -48,7 +50,7 @@ export default function OnboardingPage() {
         correctionFactorEvening: cf,
         correctionFactorNight: cf,
       });
-      setProfile(profile);
+      await loadProfiles();
       navigate("/");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Не удалось сохранить профиль");
@@ -60,6 +62,19 @@ export default function OnboardingPage() {
   return (
     <AuthLayout title="Настройка профиля" subtitle="Эти значения — только отправная точка, приложение будет подстраивать их само">
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <div>
+          <label className="label">Имя профиля</label>
+          <input
+            className="input"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder={user?.name || "например: Мама"}
+            autoFocus
+          />
+          <p className="mt-1 text-xs text-slate-400">
+            Так профиль будет называться при переключении. Позже можно добавить профили близких.
+          </p>
+        </div>
         <div>
           <label className="label">Тип диабета</label>
           <select className="input" value={diabetesType} onChange={(e) => setDiabetesType(e.target.value as DiabetesType)}>

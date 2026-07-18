@@ -121,7 +121,7 @@ export default function DiaryPage() {
   useEffect(() => {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [days, page]);
+  }, [days, page, profile?.id]);
 
   const totalPages = useMemo(() => {
     if (!earliest) return 1;

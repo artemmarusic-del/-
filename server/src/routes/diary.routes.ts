@@ -4,11 +4,13 @@ import { GlucoseContext, InsulinType } from "@prisma/client";
 import { prisma } from "../db";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { requireAuth } from "../middleware/auth";
+import { resolveProfile } from "../middleware/activeProfile";
 import { HttpError } from "../middleware/errorHandler";
 import { getTimeSegment } from "../utils/timeSegment";
 
 const router = Router();
 router.use(requireAuth);
+router.use(resolveProfile);
 
 function parseRange(req: import("express").Request) {
   const from = req.query.from ? new Date(req.query.from as string) : new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
@@ -98,12 +100,12 @@ router.post(
       };
     });
 
-    const profile = await prisma.profile.findUnique({ where: { userId: req.userId! } });
+    const profile = await prisma.profile.findUnique({ where: { id: req.profileId! } });
     const xeGramsPerUnit = profile?.xeGramsPerUnit ?? 10;
 
     const meal = await prisma.mealEntry.create({
       data: {
-        userId: req.userId!,
+        profileId: req.profileId!,
         eatenAt,
         timeSegment: getTimeSegment(eatenAt),
         note: data.note,
@@ -126,7 +128,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const { from, to } = parseRange(req);
     const meals = await prisma.mealEntry.findMany({
-      where: { userId: req.userId!, eatenAt: { gte: from, lte: to } },
+      where: { profileId: req.profileId!, eatenAt: { gte: from, lte: to } },
       include: { items: true },
       orderBy: { eatenAt: "desc" },
     });
@@ -138,7 +140,7 @@ router.delete(
   "/meals/:id",
   asyncHandler(async (req, res) => {
     const meal = await prisma.mealEntry.findUnique({ where: { id: req.params.id } });
-    if (!meal || meal.userId !== req.userId) {
+    if (!meal || meal.profileId !== req.profileId) {
       throw new HttpError(404, "Приём пищи не найден");
     }
     await prisma.mealEntry.delete({ where: { id: meal.id } });
@@ -162,7 +164,7 @@ router.post(
     const data = glucoseSchema.parse(req.body);
     const reading = await prisma.glucoseReading.create({
       data: {
-        userId: req.userId!,
+        profileId: req.profileId!,
         measuredAt: new Date(data.measuredAt),
         value: data.value,
         context: data.context,
@@ -179,7 +181,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const { from, to } = parseRange(req);
     const readings = await prisma.glucoseReading.findMany({
-      where: { userId: req.userId!, measuredAt: { gte: from, lte: to } },
+      where: { profileId: req.profileId!, measuredAt: { gte: from, lte: to } },
       orderBy: { measuredAt: "desc" },
     });
     res.json(readings);
@@ -190,7 +192,7 @@ router.delete(
   "/glucose/:id",
   asyncHandler(async (req, res) => {
     const reading = await prisma.glucoseReading.findUnique({ where: { id: req.params.id } });
-    if (!reading || reading.userId !== req.userId) {
+    if (!reading || reading.profileId !== req.profileId) {
       throw new HttpError(404, "Запись не найдена");
     }
     await prisma.glucoseReading.delete({ where: { id: reading.id } });
@@ -215,7 +217,7 @@ router.post(
     const data = insulinSchema.parse(req.body);
     const dose = await prisma.insulinDose.create({
       data: {
-        userId: req.userId!,
+        profileId: req.profileId!,
         givenAt: new Date(data.givenAt),
         type: data.type,
         units: data.units,
@@ -233,7 +235,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const { from, to } = parseRange(req);
     const doses = await prisma.insulinDose.findMany({
-      where: { userId: req.userId!, givenAt: { gte: from, lte: to } },
+      where: { profileId: req.profileId!, givenAt: { gte: from, lte: to } },
       orderBy: { givenAt: "desc" },
     });
     res.json(doses);
@@ -244,7 +246,7 @@ router.delete(
   "/insulin/:id",
   asyncHandler(async (req, res) => {
     const dose = await prisma.insulinDose.findUnique({ where: { id: req.params.id } });
-    if (!dose || dose.userId !== req.userId) {
+    if (!dose || dose.profileId !== req.profileId) {
       throw new HttpError(404, "Запись не найдена");
     }
     await prisma.insulinDose.delete({ where: { id: dose.id } });
@@ -259,17 +261,17 @@ router.get(
   asyncHandler(async (req, res) => {
     const [firstMeal, firstGlucose, firstInsulin] = await Promise.all([
       prisma.mealEntry.findFirst({
-        where: { userId: req.userId! },
+        where: { profileId: req.profileId! },
         orderBy: { eatenAt: "asc" },
         select: { eatenAt: true },
       }),
       prisma.glucoseReading.findFirst({
-        where: { userId: req.userId! },
+        where: { profileId: req.profileId! },
         orderBy: { measuredAt: "asc" },
         select: { measuredAt: true },
       }),
       prisma.insulinDose.findFirst({
-        where: { userId: req.userId! },
+        where: { profileId: req.profileId! },
         orderBy: { givenAt: "asc" },
         select: { givenAt: true },
       }),
@@ -293,16 +295,16 @@ router.get(
 
     const [meals, glucose, insulin] = await Promise.all([
       prisma.mealEntry.findMany({
-        where: { userId: req.userId!, eatenAt: { gte: dayStart, lte: dayEnd } },
+        where: { profileId: req.profileId!, eatenAt: { gte: dayStart, lte: dayEnd } },
         include: { items: true },
         orderBy: { eatenAt: "asc" },
       }),
       prisma.glucoseReading.findMany({
-        where: { userId: req.userId!, measuredAt: { gte: dayStart, lte: dayEnd } },
+        where: { profileId: req.profileId!, measuredAt: { gte: dayStart, lte: dayEnd } },
         orderBy: { measuredAt: "asc" },
       }),
       prisma.insulinDose.findMany({
-        where: { userId: req.userId!, givenAt: { gte: dayStart, lte: dayEnd } },
+        where: { profileId: req.profileId!, givenAt: { gte: dayStart, lte: dayEnd } },
         orderBy: { givenAt: "asc" },
       }),
     ]);
