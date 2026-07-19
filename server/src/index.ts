@@ -27,10 +27,25 @@ app.use(
 );
 app.use(
   cors({
-    origin: env.clientUrl,
+    // Фронтенд отдаётся с этого же адреса, поэтому CORS нужен только для
+    // dev-сервера. В production разрешаем собственный публичный адрес.
+    origin: env.isProduction ? env.appUrl : env.clientUrl,
     credentials: true,
   })
 );
+
+// Манифест, иконки, service worker и файлы для скачивания — публичные ресурсы.
+// Разрешаем читать их с других источников, иначе внешние проверяющие сервисы
+// (например, генератор APK) не видят манифест и считают сайт не-PWA.
+const PUBLIC_ASSETS = /^\/(manifest\.webmanifest|sw\.js|favicon|icons\/|files\/)/;
+app.use((req, res, next) => {
+  if (PUBLIC_ASSETS.test(req.path)) {
+    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.removeHeader("Access-Control-Allow-Credentials");
+  }
+  next();
+});
 app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 
