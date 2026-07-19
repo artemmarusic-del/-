@@ -22,6 +22,8 @@ export default function MealForm({
 }) {
   const [eatenAt, setEatenAt] = useState(() => new Date().toISOString().slice(0, 16));
   const [note, setNote] = useState("");
+  const [glucose, setGlucose] = useState("");
+  const [treatment, setTreatment] = useState("");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<FoodItem[]>([]);
   const [items, setItems] = useState<DraftItem[]>([]);
@@ -94,6 +96,8 @@ export default function MealForm({
     setItems((prev) => prev.filter((i) => i.key !== key));
   }
 
+  const isLowGlucose = glucose !== "" && Number(glucose) < profile.targetGlucoseMin;
+
   const totalCarbs = items.reduce((sum, i) => sum + (i.carbs100 * i.grams) / 100, 0);
   const totalXe = totalCarbs / profile.xeGramsPerUnit;
   const totalKcal = items.reduce((sum, i) => sum + (i.kcal100 * i.grams) / 100, 0);
@@ -122,6 +126,19 @@ export default function MealForm({
               }
         ),
       });
+
+      // Замер сахара сохраняем отдельной записью, но привязываем к этому
+      // приёму пищи — в дневнике они покажутся одной строкой.
+      if (glucose.trim()) {
+        await api.post("/diary/glucose", {
+          measuredAt: new Date(eatenAt).toISOString(),
+          value: Number(glucose),
+          context: "BEFORE_MEAL",
+          treatment: isLowGlucose && treatment.trim() ? treatment.trim() : undefined,
+          mealEntryId: meal.id,
+        });
+      }
+
       onCreated(meal);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось сохранить приём пищи");
@@ -142,6 +159,37 @@ export default function MealForm({
           <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="например, обед" />
         </div>
       </div>
+
+      <div>
+        <label className="label">Сахар перед едой, ммоль/л (необязательно)</label>
+        <input
+          className="input"
+          type="number"
+          step="0.1"
+          value={glucose}
+          onChange={(e) => setGlucose(e.target.value)}
+          placeholder="например, 6.7"
+        />
+        <p className="mt-1 text-xs text-slate-400">
+          Замер сохранится вместе с этим приёмом пищи и покажется одной строкой в дневнике.
+        </p>
+      </div>
+
+      {isLowGlucose && (
+        <div className="rounded-lg border border-accent-200 bg-accent-50 p-3 dark:border-accent-900/50 dark:bg-accent-900/20">
+          <p className="mb-2 text-sm font-medium text-accent-700 dark:text-accent-300">
+            ⚠️ Сахар ниже целевого ({profile.targetGlucoseMin} ммоль/л) — сначала купируйте
+            гипогликемию быстрыми углеводами.
+          </p>
+          <label className="label">Подкормка — чем подняли сахар</label>
+          <input
+            className="input"
+            value={treatment}
+            onChange={(e) => setTreatment(e.target.value)}
+            placeholder="например: сок 200 мл"
+          />
+        </div>
+      )}
 
       <div className="relative">
         <label className="label">Найти продукт</label>

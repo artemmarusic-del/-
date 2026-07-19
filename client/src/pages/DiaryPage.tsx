@@ -149,13 +149,48 @@ export default function DiaryPage() {
 
   const trends = useMemo(() => computeTrends(glucose), [glucose]);
 
+  // Замер сахара и доза, привязанные к приёму пищи, показываются с ним ОДНОЙ
+  // строкой — как в бумажном дневнике самоконтроля. Остальные записи идут
+  // отдельными строками.
   const rows = useMemo<Row[]>(() => {
-    const list: Row[] = [
-      ...glucose.map((g) => ({ key: `g-${g.id}`, time: new Date(g.measuredAt), glucose: g })),
-      ...insulin.map((d) => ({ key: `i-${d.id}`, time: new Date(d.givenAt), insulin: d })),
-      ...meals.map((m) => ({ key: `m-${m.id}`, time: new Date(m.eatenAt), meal: m })),
-    ];
-    return list.sort((a, b) => b.time.getTime() - a.time.getTime());
+    const mealIds = new Set(meals.map((m) => m.id));
+    const usedGlucose = new Set<string>();
+    const usedInsulin = new Set<string>();
+
+    const mealRows: Row[] = meals.map((meal) => {
+      const linkedGlucose = glucose
+        .filter((g) => g.mealEntryId === meal.id)
+        .sort((a, b) => new Date(a.measuredAt).getTime() - new Date(b.measuredAt).getTime());
+      const linkedInsulin = insulin
+        .filter((d) => d.mealEntryId === meal.id)
+        .sort((a, b) => new Date(a.givenAt).getTime() - new Date(b.givenAt).getTime());
+
+      // В строку берём первый замер и первую дозу; повторные покажем отдельно.
+      const g = linkedGlucose[0];
+      const d = linkedInsulin[0];
+      if (g) usedGlucose.add(g.id);
+      if (d) usedInsulin.add(d.id);
+
+      return {
+        key: `m-${meal.id}`,
+        time: new Date(meal.eatenAt),
+        meal,
+        glucose: g,
+        insulin: d,
+      };
+    });
+
+    const standaloneGlucose: Row[] = glucose
+      .filter((g) => !usedGlucose.has(g.id) && !(g.mealEntryId && mealIds.has(g.mealEntryId)))
+      .map((g) => ({ key: `g-${g.id}`, time: new Date(g.measuredAt), glucose: g }));
+
+    const standaloneInsulin: Row[] = insulin
+      .filter((d) => !usedInsulin.has(d.id) && !(d.mealEntryId && mealIds.has(d.mealEntryId)))
+      .map((d) => ({ key: `i-${d.id}`, time: new Date(d.givenAt), insulin: d }));
+
+    return [...mealRows, ...standaloneGlucose, ...standaloneInsulin].sort(
+      (a, b) => b.time.getTime() - a.time.getTime()
+    );
   }, [glucose, insulin, meals]);
 
   // Full-text filter across everything visible in a row: foods, note, treatment,
@@ -385,17 +420,22 @@ export default function DiaryPage() {
                       )}
                     </td>
                     <td className="max-w-[260px] px-4 py-2.5">
-                      {row.meal ? (
-                        <div>
-                          <span className="badge-brand mr-1.5">{row.meal.totalXe.toFixed(1)} ХЕ</span>
-                          <span className="text-xs text-slate-500 dark:text-slate-400">
-                            {row.meal.items.map((i) => i.foodName).join(", ")}
-                          </span>
+                      {row.meal || row.glucose?.treatment ? (
+                        <div className="flex flex-col gap-1">
+                          {row.meal && (
+                            <div>
+                              <span className="badge-brand mr-1.5">{row.meal.totalXe.toFixed(1)} ХЕ</span>
+                              <span className="text-xs text-slate-500 dark:text-slate-400">
+                                {row.meal.items.map((i) => i.foodName).join(", ")}
+                              </span>
+                            </div>
+                          )}
+                          {row.glucose?.treatment && (
+                            <span className="badge-danger w-fit" title="Подкормка при низком сахаре">
+                              🍬 {row.glucose.treatment}
+                            </span>
+                          )}
                         </div>
-                      ) : row.glucose?.treatment ? (
-                        <span className="badge-danger" title="Подкормка при низком сахаре">
-                          🍬 {row.glucose.treatment}
-                        </span>
                       ) : (
                         <span className="text-slate-300 dark:text-slate-600">—</span>
                       )}
