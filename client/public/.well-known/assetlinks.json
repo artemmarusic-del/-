@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "com.onrender.xe_dnevnik.twa",
+        "sha256_cert_fingerprints": ["5E:A5:E5:FE:29:C0:77:42:8F:65:6B:B0:07:70:91:53:FC:7F:07:27:09:C9:19:1C:80:5A:96:EB:73:C6:2C:46"]
+      }
+    }]

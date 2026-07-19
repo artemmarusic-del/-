@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 // Файлы лежат в client/public/files/ — папка намеренно называется не так,
 // как маршрут страницы /downloads, иначе статика перехватывает адрес.
 // Ставим true, когда APK положен рядом с exe.
-const APK_AVAILABLE = false;
+const APK_AVAILABLE = true;
 const APK_URL = "/files/xe-dnevnik.apk";
 const WINDOWS_URL = "/files/XE-Dnevnik-Windows.exe";
 

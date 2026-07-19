@@ -37,7 +37,7 @@ app.use(
 // Манифест, иконки, service worker и файлы для скачивания — публичные ресурсы.
 // Разрешаем читать их с других источников, иначе внешние проверяющие сервисы
 // (например, генератор APK) не видят манифест и считают сайт не-PWA.
-const PUBLIC_ASSETS = /^\/(manifest\.webmanifest|sw\.js|favicon|icons\/|files\/)/;
+const PUBLIC_ASSETS = /^\/(manifest\.webmanifest|sw\.js|favicon|icons\/|files\/|\.well-known\/)/;
 app.use((req, res, next) => {
   if (PUBLIC_ASSETS.test(req.path)) {
     res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
@@ -67,7 +67,9 @@ const clientDist = process.env.CLIENT_DIST_PATH
   : path.resolve(__dirname, "../../client/dist");
 
 if (fs.existsSync(clientDist)) {
-  app.use(express.static(clientDist));
+  // dotfiles: "allow" нужен, чтобы отдавался /.well-known/assetlinks.json —
+  // без него Android-приложение открывается с адресной строкой браузера.
+  app.use(express.static(clientDist, { dotfiles: "allow" }));
   app.get(/^(?!\/api).*/, (_req, res) => {
     res.sendFile(path.join(clientDist, "index.html"));
   });
