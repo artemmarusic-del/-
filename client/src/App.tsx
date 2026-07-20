@@ -14,6 +14,7 @@ import FoodsPage from "./pages/FoodsPage";
 import StatsPage from "./pages/StatsPage";
 import SettingsPage from "./pages/SettingsPage";
 import DownloadsPage from "./pages/DownloadsPage";
+import UpdatePrompt from "./components/UpdatePrompt";
 
 export default function App() {
   const init = useAuthStore((s) => s.init);
@@ -23,7 +24,9 @@ export default function App() {
   }, [init]);
 
   return (
-    <Routes>
+    <>
+      <UpdatePrompt />
+      <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
@@ -43,6 +46,7 @@ export default function App() {
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+      </Routes>
+    </>
   );
 }

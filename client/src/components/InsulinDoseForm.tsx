@@ -8,20 +8,30 @@ const typeLabels: Record<InsulinType, string> = {
   BASAL: "Базальный (продлённый)",
 };
 
+function toLocalInput(iso: string): string {
+  const d = new Date(iso);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
 export default function InsulinDoseForm({
   recentMeals,
   onCreated,
+  editing,
 }: {
   recentMeals: MealEntry[];
   onCreated: (dose: InsulinDose) => void;
+  /** Если передан — форма правит существующую дозу. */
+  editing?: InsulinDose;
 }) {
-  const [type, setType] = useState<InsulinType>("BOLUS_MEAL");
-  const [givenAt, setGivenAt] = useState(() => new Date().toISOString().slice(0, 16));
-  const [mealEntryId, setMealEntryId] = useState<string>("");
+  const [type, setType] = useState<InsulinType>(editing?.type ?? "BOLUS_MEAL");
+  const [givenAt, setGivenAt] = useState(() =>
+    editing ? toLocalInput(editing.givenAt) : new Date().toISOString().slice(0, 16)
+  );
+  const [mealEntryId, setMealEntryId] = useState<string>(editing?.mealEntryId ?? "");
   const [carbsGrams, setCarbsGrams] = useState("");
   const [currentGlucose, setCurrentGlucose] = useState("");
   const [result, setResult] = useState<InsulinCalcResult | null>(null);
-  const [units, setUnits] = useState("");
+  const [units, setUnits] = useState(editing ? String(editing.units) : "");
   const [calculating, setCalculating] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,14 +71,17 @@ export default function InsulinDoseForm({
       const unitsNum = Number(units);
       const overrideReason =
         result && unitsNum !== result.totalUnits ? `Скорректировано пользователем (расчёт: ${result.totalUnits} ед.)` : undefined;
-      const dose = await api.post<InsulinDose>("/diary/insulin", {
+      const payload = {
         givenAt: new Date(givenAt).toISOString(),
         type,
         units: unitsNum,
-        calculatedUnits: result?.totalUnits,
+        calculatedUnits: result?.totalUnits ?? editing?.calculatedUnits ?? undefined,
         overrideReason,
         mealEntryId: mealEntryId || undefined,
-      });
+      };
+      const dose = editing
+        ? await api.put<InsulinDose>(`/diary/insulin/${editing.id}`, payload)
+        : await api.post<InsulinDose>("/diary/insulin", payload);
       onCreated(dose);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось сохранить дозу");
@@ -171,7 +184,7 @@ export default function InsulinDoseForm({
       {error && <p className="text-sm text-accent-600">{error}</p>}
 
       <button type="button" className="btn-primary w-full" disabled={submitting} onClick={handleSubmit}>
-        {submitting ? "Сохраняем…" : "Сохранить введённую дозу"}
+        {submitting ? "Сохраняем…" : editing ? "Сохранить изменения" : "Сохранить введённую дозу"}
       </button>
     </div>
   );

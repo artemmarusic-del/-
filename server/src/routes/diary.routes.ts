@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { GlucoseContext, InsulinType } from "@prisma/client";
+import { GlucoseContext, GlucoseTrend, InsulinType } from "@prisma/client";
 import { prisma } from "../db";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { requireAuth } from "../middleware/auth";
@@ -38,67 +38,76 @@ const mealSchema = z.object({
   items: z.array(mealItemSchema).min(1),
 });
 
+type MealItemInput = z.infer<typeof mealSchema>["items"];
+
+/**
+ * Разворачивает состав приёма пищи в позиции с посчитанными БЖУ и калориями
+ * и возвращает итоги. Используется и при создании, и при правке — чтобы
+ * цифры считались одинаково.
+ */
+async function buildMealItems(items: MealItemInput) {
+  const foodIds = items
+    .filter((i): i is { foodItemId: string; grams: number } => "foodItemId" in i)
+    .map((i) => i.foodItemId);
+  const foods = foodIds.length
+    ? await prisma.foodItem.findMany({ where: { id: { in: foodIds } } })
+    : [];
+  const foodsById = new Map(foods.map((f) => [f.id, f]));
+
+  const totals = { carbs: 0, kcal: 0, protein: 0, fat: 0 };
+
+  const itemsToCreate = items.map((item) => {
+    let base: { name: string; kcal100: number; protein100: number; fat100: number; carbs100: number; foodItemId: string | null };
+    if ("foodItemId" in item) {
+      const food = foodsById.get(item.foodItemId);
+      if (!food) throw new HttpError(400, "Один из продуктов не найден");
+      base = {
+        name: food.name,
+        kcal100: food.kcal100,
+        protein100: food.protein100,
+        fat100: food.fat100,
+        carbs100: food.carbs100,
+        foodItemId: food.id,
+      };
+    } else {
+      base = {
+        name: item.foodName,
+        kcal100: item.kcal100,
+        protein100: item.protein100,
+        fat100: item.fat100,
+        carbs100: item.carbs100,
+        foodItemId: null,
+      };
+    }
+    const factor = item.grams / 100;
+    const carbs = base.carbs100 * factor;
+    const protein = base.protein100 * factor;
+    const fat = base.fat100 * factor;
+    const kcal = base.kcal100 * factor;
+    totals.carbs += carbs;
+    totals.protein += protein;
+    totals.fat += fat;
+    totals.kcal += kcal;
+    return {
+      foodItemId: base.foodItemId,
+      foodName: base.name,
+      grams: item.grams,
+      carbs,
+      protein,
+      fat,
+      kcal,
+    };
+  });
+
+  return { itemsToCreate, totals };
+}
+
 router.post(
   "/meals",
   asyncHandler(async (req, res) => {
     const data = mealSchema.parse(req.body);
     const eatenAt = new Date(data.eatenAt);
-
-    const foodIds = data.items
-      .filter((i): i is { foodItemId: string; grams: number } => "foodItemId" in i)
-      .map((i) => i.foodItemId);
-    const foods = foodIds.length
-      ? await prisma.foodItem.findMany({ where: { id: { in: foodIds } } })
-      : [];
-    const foodsById = new Map(foods.map((f) => [f.id, f]));
-
-    let totalCarbs = 0;
-    let totalKcal = 0;
-    let totalProtein = 0;
-    let totalFat = 0;
-
-    const itemsToCreate = data.items.map((item) => {
-      let base: { name: string; kcal100: number; protein100: number; fat100: number; carbs100: number; foodItemId: string | null };
-      if ("foodItemId" in item) {
-        const food = foodsById.get(item.foodItemId);
-        if (!food) throw new HttpError(400, "Один из продуктов не найден");
-        base = {
-          name: food.name,
-          kcal100: food.kcal100,
-          protein100: food.protein100,
-          fat100: food.fat100,
-          carbs100: food.carbs100,
-          foodItemId: food.id,
-        };
-      } else {
-        base = {
-          name: item.foodName,
-          kcal100: item.kcal100,
-          protein100: item.protein100,
-          fat100: item.fat100,
-          carbs100: item.carbs100,
-          foodItemId: null,
-        };
-      }
-      const factor = item.grams / 100;
-      const carbs = base.carbs100 * factor;
-      const protein = base.protein100 * factor;
-      const fat = base.fat100 * factor;
-      const kcal = base.kcal100 * factor;
-      totalCarbs += carbs;
-      totalProtein += protein;
-      totalFat += fat;
-      totalKcal += kcal;
-      return {
-        foodItemId: base.foodItemId,
-        foodName: base.name,
-        grams: item.grams,
-        carbs,
-        protein,
-        fat,
-        kcal,
-      };
-    });
+    const { itemsToCreate, totals } = await buildMealItems(data.items);
 
     const profile = await prisma.profile.findUnique({ where: { id: req.profileId! } });
     const xeGramsPerUnit = profile?.xeGramsPerUnit ?? 10;
@@ -109,11 +118,11 @@ router.post(
         eatenAt,
         timeSegment: getTimeSegment(eatenAt),
         note: data.note,
-        totalCarbs,
-        totalXe: totalCarbs / xeGramsPerUnit,
-        totalKcal,
-        totalProtein,
-        totalFat,
+        totalCarbs: totals.carbs,
+        totalXe: totals.carbs / xeGramsPerUnit,
+        totalKcal: totals.kcal,
+        totalProtein: totals.protein,
+        totalFat: totals.fat,
         items: { create: itemsToCreate },
       },
       include: { items: true },
@@ -136,6 +145,45 @@ router.get(
   })
 );
 
+/** Правка приёма пищи: состав пересчитывается заново (ХЕ, БЖУ, калории). */
+router.put(
+  "/meals/:id",
+  asyncHandler(async (req, res) => {
+    const existing = await prisma.mealEntry.findUnique({ where: { id: req.params.id } });
+    if (!existing || existing.profileId !== req.profileId) {
+      throw new HttpError(404, "Приём пищи не найден");
+    }
+
+    const data = mealSchema.parse(req.body);
+    const eatenAt = new Date(data.eatenAt);
+    const { itemsToCreate, totals } = await buildMealItems(data.items);
+
+    const profile = await prisma.profile.findUnique({ where: { id: req.profileId! } });
+    const xeGramsPerUnit = profile?.xeGramsPerUnit ?? 10;
+
+    const meal = await prisma.$transaction(async (tx) => {
+      await tx.mealItem.deleteMany({ where: { mealEntryId: existing.id } });
+      return tx.mealEntry.update({
+        where: { id: existing.id },
+        data: {
+          eatenAt,
+          timeSegment: getTimeSegment(eatenAt),
+          note: data.note ?? null,
+          totalCarbs: totals.carbs,
+          totalXe: totals.carbs / xeGramsPerUnit,
+          totalKcal: totals.kcal,
+          totalProtein: totals.protein,
+          totalFat: totals.fat,
+          items: { create: itemsToCreate },
+        },
+        include: { items: true },
+      });
+    });
+
+    res.json(meal);
+  })
+);
+
 router.delete(
   "/meals/:id",
   asyncHandler(async (req, res) => {
@@ -154,6 +202,7 @@ const glucoseSchema = z.object({
   measuredAt: z.string().datetime(),
   value: z.number().min(0).max(40),
   context: z.nativeEnum(GlucoseContext).default(GlucoseContext.RANDOM),
+  trend: z.nativeEnum(GlucoseTrend).nullable().optional(),
   treatment: z.string().max(200).optional(),
   mealEntryId: z.string().uuid().optional(),
 });
@@ -168,6 +217,7 @@ router.post(
         measuredAt: new Date(data.measuredAt),
         value: data.value,
         context: data.context,
+        trend: data.trend ?? null,
         treatment: data.treatment,
         mealEntryId: data.mealEntryId,
       },
@@ -185,6 +235,28 @@ router.get(
       orderBy: { measuredAt: "desc" },
     });
     res.json(readings);
+  })
+);
+
+router.put(
+  "/glucose/:id",
+  asyncHandler(async (req, res) => {
+    const existing = await prisma.glucoseReading.findUnique({ where: { id: req.params.id } });
+    if (!existing || existing.profileId !== req.profileId) {
+      throw new HttpError(404, "Запись не найдена");
+    }
+    const data = glucoseSchema.parse(req.body);
+    const reading = await prisma.glucoseReading.update({
+      where: { id: existing.id },
+      data: {
+        measuredAt: new Date(data.measuredAt),
+        value: data.value,
+        context: data.context,
+        trend: data.trend ?? null,
+        treatment: data.treatment ?? null,
+      },
+    });
+    res.json(reading);
   })
 );
 
@@ -239,6 +311,28 @@ router.get(
       orderBy: { givenAt: "desc" },
     });
     res.json(doses);
+  })
+);
+
+router.put(
+  "/insulin/:id",
+  asyncHandler(async (req, res) => {
+    const existing = await prisma.insulinDose.findUnique({ where: { id: req.params.id } });
+    if (!existing || existing.profileId !== req.profileId) {
+      throw new HttpError(404, "Запись не найдена");
+    }
+    const data = insulinSchema.parse(req.body);
+    const dose = await prisma.insulinDose.update({
+      where: { id: existing.id },
+      data: {
+        givenAt: new Date(data.givenAt),
+        type: data.type,
+        units: data.units,
+        calculatedUnits: data.calculatedUnits ?? null,
+        overrideReason: data.overrideReason ?? null,
+      },
+    });
+    res.json(dose);
   })
 );
 

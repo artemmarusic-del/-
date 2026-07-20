@@ -23,6 +23,16 @@ enum TimeSegment {
   NIGHT // 23:00-06:00
 }
 
+/// Стрелка тенденции, как на мониторинге глюкозы. Указывается пользователем;
+/// если не указана, приложение показывает рассчитанную по соседним замерам.
+enum GlucoseTrend {
+  UP
+  SLOW_UP
+  FLAT
+  SLOW_DOWN
+  DOWN
+}
+
 enum GlucoseContext {
   FASTING
   BEFORE_MEAL
@@ -193,6 +203,7 @@ model GlucoseReading {
   measuredAt  DateTime
   value       Float // mmol/L
   context     GlucoseContext @default(RANDOM)
+  trend       GlucoseTrend? // стрелка, указанная пользователем (с прибора)
   treatment   String? // чем купировали низкий сахар (подкормка): сок, сахар и т.п.
   mealEntryId String?
   mealEntry   MealEntry?     @relation(fields: [mealEntryId], references: [id], onDelete: SetNull)

@@ -73,11 +73,16 @@ export interface MealEntry {
   items: MealItem[];
 }
 
+/** Стрелка тенденции, как на приборе мониторинга. */
+export type GlucoseTrend = "UP" | "SLOW_UP" | "FLAT" | "SLOW_DOWN" | "DOWN";
+
 export interface GlucoseReading {
   id: string;
   measuredAt: string;
   value: number;
   context: GlucoseContext;
+  /** Указана пользователем; если null — показывается рассчитанная. */
+  trend: GlucoseTrend | null;
   treatment: string | null;
   mealEntryId: string | null;
 }

@@ -5,10 +5,18 @@ import Modal from "../components/Modal";
 import MealForm from "../components/MealForm";
 import GlucoseForm from "../components/GlucoseForm";
 import InsulinDoseForm from "../components/InsulinDoseForm";
-import { GlucoseReading, InsulinDose, MealEntry } from "../types";
+import { GlucoseReading, GlucoseTrend, InsulinDose, MealEntry } from "../types";
+import { TREND_VIEW } from "../components/TrendPicker";
 import { ExportRow, exportToExcel, exportToTxt, exportToWord } from "../utils/exportDiary";
 
 type ActiveModal = "meal" | "glucose" | "insulin" | null;
+
+/** Что именно правим: тип записи и сама запись. */
+type Editing =
+  | { kind: "meal"; meal: MealEntry }
+  | { kind: "glucose"; reading: GlucoseReading }
+  | { kind: "insulin"; dose: InsulinDose }
+  | null;
 
 const typeLabels: Record<string, string> = {
   BOLUS_MEAL: "на еду",
@@ -22,17 +30,11 @@ const ranges = [
   { days: 14, label: "14 дней" },
 ];
 
-// Trend of a glucose reading vs the previous one (rate in mmol/L per hour).
-// Arrows follow the CGM convention: ↑ rising fast, ↗ rising, → flat, ↘ falling, ↓ falling fast.
-type Trend = "UP" | "SLOW_UP" | "FLAT" | "SLOW_DOWN" | "DOWN" | null;
+// Тенденцию пользователь может указать сам (стрелка с прибора). Если не указал —
+// приложение считает её по скорости изменения между соседними замерами.
+type Trend = GlucoseTrend | null;
 
-const trendView: Record<Exclude<Trend, null>, { arrow: string; label: string; cls: string }> = {
-  UP: { arrow: "↑", label: "вверх", cls: "text-accent-600 dark:text-accent-400" },
-  SLOW_UP: { arrow: "↗", label: "медленно вверх", cls: "text-amber-600 dark:text-amber-400" },
-  FLAT: { arrow: "→", label: "ровный", cls: "text-brand-600 dark:text-brand-400" },
-  SLOW_DOWN: { arrow: "↘", label: "медленно вниз", cls: "text-amber-600 dark:text-amber-400" },
-  DOWN: { arrow: "↓", label: "вниз", cls: "text-accent-600 dark:text-accent-400" },
-};
+const trendView = TREND_VIEW;
 
 const MAX_TREND_GAP_HOURS = 4;
 
@@ -42,6 +44,11 @@ function computeTrends(readings: GlucoseReading[]): Map<string, Trend> {
   );
   const map = new Map<string, Trend>();
   for (let i = 0; i < sorted.length; i++) {
+    // Указанная пользователем стрелка всегда важнее рассчитанной.
+    if (sorted[i].trend) {
+      map.set(sorted[i].id, sorted[i].trend);
+      continue;
+    }
     if (i === 0) {
       map.set(sorted[i].id, null);
       continue;
@@ -95,6 +102,7 @@ export default function DiaryPage() {
   const [glucose, setGlucose] = useState<GlucoseReading[]>([]);
   const [insulin, setInsulin] = useState<InsulinDose[]>([]);
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
+  const [editing, setEditing] = useState<Editing>(null);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
 
@@ -440,7 +448,35 @@ export default function DiaryPage() {
                         <span className="text-slate-300 dark:text-slate-600">—</span>
                       )}
                     </td>
-                    <td className="px-2 py-2.5 text-right">
+                    <td className="whitespace-nowrap px-2 py-2.5 text-right">
+                      {/* Правка: у объединённой строки своя кнопка на каждую часть */}
+                      {row.meal && (
+                        <button
+                          onClick={() => setEditing({ kind: "meal", meal: row.meal! })}
+                          title="Изменить приём пищи"
+                          className="rounded px-1 text-slate-400 transition hover:text-brand-600"
+                        >
+                          🍽️
+                        </button>
+                      )}
+                      {row.glucose && (
+                        <button
+                          onClick={() => setEditing({ kind: "glucose", reading: row.glucose! })}
+                          title="Изменить замер сахара"
+                          className="rounded px-1 text-slate-400 transition hover:text-brand-600"
+                        >
+                          🩸
+                        </button>
+                      )}
+                      {row.insulin && (
+                        <button
+                          onClick={() => setEditing({ kind: "insulin", dose: row.insulin! })}
+                          title="Изменить дозу инсулина"
+                          className="rounded px-1 text-slate-400 transition hover:text-brand-600"
+                        >
+                          💉
+                        </button>
+                      )}
                       <button
                         onClick={() => deleteRow(row)}
                         title="Удалить запись"
@@ -504,10 +540,47 @@ export default function DiaryPage() {
       )}
 
       <p className="mt-3 text-xs text-slate-400">
-        Тенденция рассчитывается по скорости изменения между соседними замерами (если между ними не больше{" "}
+        Тенденцию можно указать самому при вводе сахара (стрелка с прибора). Если не указана, приложение
+        рассчитывает её по скорости изменения между соседними замерами (если между ними не больше{" "}
         {MAX_TREND_GAP_HOURS} часов): ↑ быстрее +2 ммоль/л в час, ↗ от +0.6 до +2, → примерно ровно, ↘ от −0.6
         до −2, ↓ быстрее −2.
       </p>
+
+      {editing?.kind === "meal" && (
+        <Modal title="Изменить приём пищи" onClose={() => setEditing(null)}>
+          <MealForm
+            profile={profile}
+            editing={editing.meal}
+            onCreated={() => {
+              setEditing(null);
+              refresh();
+            }}
+          />
+        </Modal>
+      )}
+      {editing?.kind === "glucose" && (
+        <Modal title="Изменить замер сахара" onClose={() => setEditing(null)}>
+          <GlucoseForm
+            editing={editing.reading}
+            onCreated={() => {
+              setEditing(null);
+              refresh();
+            }}
+          />
+        </Modal>
+      )}
+      {editing?.kind === "insulin" && (
+        <Modal title="Изменить дозу инсулина" onClose={() => setEditing(null)}>
+          <InsulinDoseForm
+            recentMeals={meals}
+            editing={editing.dose}
+            onCreated={() => {
+              setEditing(null);
+              refresh();
+            }}
+          />
+        </Modal>
+      )}
 
       {activeModal === "meal" && (
         <Modal title="Добавить приём пищи" onClose={() => setActiveModal(null)}>

@@ -1,15 +1,23 @@
 // Service worker для ХЕ.Дневник.
-// Задачи: сделать приложение устанавливаемым и дать оболочке открываться
-// без сети. Запросы к /api НИКОГДА не кэшируются — это личные медицинские
-// данные и авторизация, они всегда идут напрямую в сеть.
+// Задачи: сделать приложение устанавливаемым, дать оболочке открываться без
+// сети и доставлять обновления установленным приложениям.
+// Запросы к /api НИКОГДА не кэшируются — это личные медицинские данные
+// и авторизация, они всегда идут напрямую в сеть.
 
-const CACHE = "xe-dnevnik-v1";
+const CACHE = "xe-dnevnik-v2";
 const SHELL = ["/", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png"];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting())
-  );
+  // Не вызываем skipWaiting сразу: новая версия ждёт, пока приложение
+  // разрешит применить её (кнопка «Обновить» или возврат на вкладку),
+  // чтобы не перезагрузить страницу посреди ввода данных.
+  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)));
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener("activate", (event) => {

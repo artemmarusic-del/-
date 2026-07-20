@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
-import { FoodItem, MealEntry, Profile } from "../types";
+import TrendPicker from "./TrendPicker";
+import { FoodItem, GlucoseTrend, InsulinCalcResult, MealEntry, Profile } from "../types";
 
 interface DraftItem {
   key: string;
@@ -13,20 +14,50 @@ interface DraftItem {
   carbs100: number;
 }
 
+function toLocalInput(iso: string): string {
+  const d = new Date(iso);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
 export default function MealForm({
   profile,
   onCreated,
+  editing,
 }: {
   profile: Profile;
   onCreated: (meal: MealEntry) => void;
+  /** Если передан — правим существующий приём пищи вместо создания нового. */
+  editing?: MealEntry;
 }) {
-  const [eatenAt, setEatenAt] = useState(() => new Date().toISOString().slice(0, 16));
-  const [note, setNote] = useState("");
+  const [eatenAt, setEatenAt] = useState(() =>
+    editing ? toLocalInput(editing.eatenAt) : new Date().toISOString().slice(0, 16)
+  );
+  const [note, setNote] = useState(editing?.note ?? "");
   const [glucose, setGlucose] = useState("");
+  const [trend, setTrend] = useState<GlucoseTrend | null>(null);
   const [treatment, setTreatment] = useState("");
+  const [units, setUnits] = useState("");
+  const [calc, setCalc] = useState<InsulinCalcResult | null>(null);
+  const [calculating, setCalculating] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<FoodItem[]>([]);
-  const [items, setItems] = useState<DraftItem[]>([]);
+  const [items, setItems] = useState<DraftItem[]>(() =>
+    // При правке подставляем состав приёма пищи: пересчитываем показатели
+    // «на 100 г» обратно из сохранённых значений позиции.
+    (editing?.items ?? []).map((i) => {
+      const per100 = (v: number) => (i.grams > 0 ? (v * 100) / i.grams : 0);
+      return {
+        key: i.id,
+        foodItemId: i.foodItemId,
+        name: i.foodName,
+        grams: i.grams,
+        kcal100: per100(i.kcal),
+        protein100: per100(i.protein),
+        fat100: per100(i.fat),
+        carbs100: per100(i.carbs),
+      };
+    })
+  );
   const [customName, setCustomName] = useState("");
   const [showCustom, setShowCustom] = useState(false);
   const [customMacros, setCustomMacros] = useState({ kcal100: "", protein100: "", fat100: "", carbs100: "" });
@@ -98,6 +129,24 @@ export default function MealForm({
 
   const isLowGlucose = glucose !== "" && Number(glucose) < profile.targetGlucoseMin;
 
+  async function handleCalculate() {
+    setCalculating(true);
+    setError(null);
+    try {
+      const res = await api.post<InsulinCalcResult>("/insulin/calculate", {
+        carbsGrams: totalCarbs,
+        currentGlucose: glucose.trim() ? Number(glucose) : undefined,
+        at: new Date(eatenAt).toISOString(),
+      });
+      setCalc(res);
+      setUnits(String(res.totalUnits));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось рассчитать дозу");
+    } finally {
+      setCalculating(false);
+    }
+  }
+
   const totalCarbs = items.reduce((sum, i) => sum + (i.carbs100 * i.grams) / 100, 0);
   const totalXe = totalCarbs / profile.xeGramsPerUnit;
   const totalKcal = items.reduce((sum, i) => sum + (i.kcal100 * i.grams) / 100, 0);
@@ -110,7 +159,7 @@ export default function MealForm({
     setSubmitting(true);
     setError(null);
     try {
-      const meal = await api.post<MealEntry>("/diary/meals", {
+      const payload = {
         eatenAt: new Date(eatenAt).toISOString(),
         note: note || undefined,
         items: items.map((i) =>
@@ -125,16 +174,36 @@ export default function MealForm({
                 carbs100: i.carbs100,
               }
         ),
-      });
+      };
+      const meal = editing
+        ? await api.put<MealEntry>(`/diary/meals/${editing.id}`, payload)
+        : await api.post<MealEntry>("/diary/meals", payload);
 
       // Замер сахара сохраняем отдельной записью, но привязываем к этому
       // приёму пищи — в дневнике они покажутся одной строкой.
-      if (glucose.trim()) {
+      if (!editing && glucose.trim()) {
         await api.post("/diary/glucose", {
           measuredAt: new Date(eatenAt).toISOString(),
           value: Number(glucose),
           context: "BEFORE_MEAL",
+          trend,
           treatment: isLowGlucose && treatment.trim() ? treatment.trim() : undefined,
+          mealEntryId: meal.id,
+        });
+      }
+
+      // Доза тоже привязывается к приёму пищи — попадёт в ту же строку дневника.
+      if (!editing && units.trim()) {
+        const unitsNum = Number(units);
+        await api.post("/diary/insulin", {
+          givenAt: new Date(eatenAt).toISOString(),
+          type: "BOLUS_MEAL",
+          units: unitsNum,
+          calculatedUnits: calc?.totalUnits,
+          overrideReason:
+            calc && unitsNum !== calc.totalUnits
+              ? `Скорректировано пользователем (расчёт: ${calc.totalUnits} ед.)`
+              : undefined,
           mealEntryId: meal.id,
         });
       }
@@ -160,6 +229,7 @@ export default function MealForm({
         </div>
       </div>
 
+      {!editing && (
       <div>
         <label className="label">Сахар перед едой, ммоль/л (необязательно)</label>
         <input
@@ -174,8 +244,11 @@ export default function MealForm({
           Замер сохранится вместе с этим приёмом пищи и покажется одной строкой в дневнике.
         </p>
       </div>
+      )}
 
-      {isLowGlucose && (
+      {!editing && glucose.trim() !== "" && <TrendPicker value={trend} onChange={setTrend} />}
+
+      {!editing && isLowGlucose && (
         <div className="rounded-lg border border-accent-200 bg-accent-50 p-3 dark:border-accent-900/50 dark:bg-accent-900/20">
           <p className="mb-2 text-sm font-medium text-accent-700 dark:text-accent-300">
             ⚠️ Сахар ниже целевого ({profile.targetGlucoseMin} ммоль/л) — сначала купируйте
@@ -288,10 +361,65 @@ export default function MealForm({
         <span className="text-lg font-bold text-brand-700 dark:text-brand-300">{totalXe.toFixed(1)} ХЕ</span>
       </div>
 
+      {!editing && (
+      <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+        <label className="label">Доза инсулина, ед. (необязательно)</label>
+        <div className="flex gap-2">
+          <input
+            className="input"
+            type="number"
+            step="0.5"
+            value={units}
+            onChange={(e) => setUnits(e.target.value)}
+            placeholder="сколько подкололи"
+          />
+          <button
+            type="button"
+            className="btn-secondary shrink-0"
+            disabled={calculating || items.length === 0}
+            onClick={handleCalculate}
+            title="Рассчитать по углеводам этого приёма пищи и сахару"
+          >
+            {calculating ? "…" : "🧮 Рассчитать"}
+          </button>
+        </div>
+
+        {calc && (
+          <div className="mt-2 rounded-lg bg-brand-50 p-2.5 text-xs dark:bg-brand-900/20">
+            <div className="flex justify-between">
+              <span>На еду ({calc.xe} ХЕ)</span>
+              <span className="font-semibold">{calc.mealDoseUnits} ед.</span>
+            </div>
+            {calc.correctionDoseUnits > 0 && (
+              <div className="flex justify-between">
+                <span>Коррекция по сахару</span>
+                <span className="font-semibold">{calc.correctionDoseUnits} ед.</span>
+              </div>
+            )}
+            {calc.iobUnits > 0 && (
+              <div className="flex justify-between text-slate-500">
+                <span>Активный инсулин (учтён)</span>
+                <span>{calc.iobUnits} ед.</span>
+              </div>
+            )}
+            <div className="mt-1 flex justify-between border-t border-brand-200 pt-1 text-sm font-bold text-brand-700 dark:border-brand-800 dark:text-brand-300">
+              <span>Предложено</span>
+              <span>{calc.totalUnits} ед.</span>
+            </div>
+            {calc.warnings.map((w, i) => (
+              <p key={i} className="mt-1.5 text-amber-700 dark:text-amber-400">
+                ⚠️ {w}
+              </p>
+            ))}
+          </div>
+        )}
+      </div>
+      )}
+
       {error && <p className="text-sm text-accent-600">{error}</p>}
 
       <button type="button" className="btn-primary w-full" disabled={submitting} onClick={handleSubmit}>
-        {submitting ? "Сохраняем…" : "Сохранить приём пищи"}
+        {submitting ? "Сохраняем…" : editing ? "Сохранить изменения" : "Сохранить приём пищи"}
       </button>
     </div>
   );
