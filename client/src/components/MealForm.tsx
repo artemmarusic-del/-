@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
+import { lookupBarcode } from "../api/barcode";
 import TrendPicker from "./TrendPicker";
 import BarcodeScanner from "./BarcodeScanner";
 import Modal from "./Modal";
-import { BarcodeLookup, FoodItem, GlucoseTrend, InsulinCalcResult, MealEntry, Profile } from "../types";
+import { FoodItem, GlucoseTrend, InsulinCalcResult, MealEntry, Profile } from "../types";
 
 interface DraftItem {
   key: string;
@@ -148,7 +149,7 @@ export default function MealForm({
     setScanning(false);
     setError(null);
     try {
-      const found = await api.get<BarcodeLookup>(`/foods/barcode/${code}`);
+      const found = await lookupBarcode(code);
       setCustomName(found.name);
       setCustomMacros({
         kcal100: String(found.kcal100),

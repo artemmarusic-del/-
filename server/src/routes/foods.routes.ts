@@ -52,24 +52,36 @@ router.get(
       `https://world.openfoodfacts.org/api/v2/product/${code}.json` +
       `?fields=product_name,product_name_ru,brands,quantity,nutriments`;
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
-    let payload: any;
-    try {
-      const response = await fetch(url, {
-        signal: controller.signal,
-        headers: { "User-Agent": "XE-Dnevnik/1.0 (diabetes diary app)" },
-      });
-      if (!response.ok) throw new Error(`status ${response.status}`);
-      payload = await response.json();
-    } catch (err) {
-      throw new HttpError(
-        503,
-        "Не удалось связаться с базой продуктов. Проверьте интернет и попробуйте ещё раз."
-      );
-    } finally {
-      clearTimeout(timeout);
+    // Open Food Facts отвечает небыстро, а бесплатный сервер медленный —
+    // даём запас по времени и одну повторную попытку.
+    async function lookup(attempt: number): Promise<any> {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
+      try {
+        const response = await fetch(url, {
+          signal: controller.signal,
+          headers: {
+            // Open Food Facts просит представляться и оставлять контакт.
+            "User-Agent": "XE-Dnevnik/1.0 (https://xe-dnevnik.onrender.com)",
+            Accept: "application/json",
+          },
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        console.error(`[barcode] попытка ${attempt} для ${code} не удалась: ${reason}`);
+        if (attempt < 2) return lookup(attempt + 1);
+        throw new HttpError(
+          503,
+          "База продуктов сейчас недоступна. Попробуйте ещё раз или введите данные вручную."
+        );
+      } finally {
+        clearTimeout(timeout);
+      }
     }
+
+    const payload = await lookup(1);
 
     if (payload?.status !== 1 || !payload.product) {
       throw new HttpError(404, "Продукт с таким штрихкодом не найден. Введите данные вручную.");

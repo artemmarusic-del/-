@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
-import { api, ApiError } from "../api/client";
+import { api } from "../api/client";
+import { lookupBarcode } from "../api/barcode";
 import BarcodeScanner from "../components/BarcodeScanner";
 import Modal from "../components/Modal";
 import { BarcodeLookup, FoodItem } from "../types";
@@ -23,7 +24,7 @@ export default function FoodsPage() {
     setScanStatus("Ищем продукт по штрихкоду…");
     setError(null);
     try {
-      const found = await api.get<BarcodeLookup>(`/foods/barcode/${code}`);
+      const found = await lookupBarcode(code);
       setForm({
         name: found.name,
         category: "По штрихкоду",
@@ -37,7 +38,7 @@ export default function FoodsPage() {
       setScanStatus(null);
     } catch (err) {
       setScanStatus(null);
-      setError(err instanceof ApiError ? err.message : "Не удалось найти продукт по штрихкоду");
+      setError(err instanceof Error ? err.message : "Не удалось найти продукт по штрихкоду");
     }
   }
 
