@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import TrendPicker from "./TrendPicker";
-import { FoodItem, GlucoseTrend, InsulinCalcResult, MealEntry, Profile } from "../types";
+import BarcodeScanner from "./BarcodeScanner";
+import Modal from "./Modal";
+import { BarcodeLookup, FoodItem, GlucoseTrend, InsulinCalcResult, MealEntry, Profile } from "../types";
 
 interface DraftItem {
   key: string;
@@ -39,6 +41,8 @@ export default function MealForm({
   const [units, setUnits] = useState("");
   const [calc, setCalc] = useState<InsulinCalcResult | null>(null);
   const [calculating, setCalculating] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [saveToLibrary, setSaveToLibrary] = useState(true);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<FoodItem[]>([]);
   const [items, setItems] = useState<DraftItem[]>(() =>
@@ -99,24 +103,63 @@ export default function MealForm({
     setResults([]);
   }
 
-  function addCustom() {
+  async function addCustom() {
     if (!customName.trim()) return;
+    const macros = {
+      kcal100: Number(customMacros.kcal100) || 0,
+      protein100: Number(customMacros.protein100) || 0,
+      fat100: Number(customMacros.fat100) || 0,
+      carbs100: Number(customMacros.carbs100) || 0,
+    };
+
+    // По умолчанию запоминаем продукт в личной библиотеке, чтобы в следующий
+    // раз его можно было просто найти поиском. Библиотека приватная.
+    let savedId: string | null = null;
+    if (saveToLibrary) {
+      try {
+        const saved = await api.post<FoodItem>("/foods", {
+          name: customName.trim(),
+          category: "Мои продукты",
+          ...macros,
+        });
+        savedId = saved.id;
+      } catch {
+        // Не удалось сохранить в библиотеку — продукт всё равно попадёт в приём пищи.
+      }
+    }
+
     setItems((prev) => [
       ...prev,
       {
         key: `custom-${Date.now()}`,
-        foodItemId: null,
+        foodItemId: savedId,
         name: customName.trim(),
         grams: 100,
-        kcal100: Number(customMacros.kcal100) || 0,
-        protein100: Number(customMacros.protein100) || 0,
-        fat100: Number(customMacros.fat100) || 0,
-        carbs100: Number(customMacros.carbs100) || 0,
+        ...macros,
       },
     ]);
     setCustomName("");
     setCustomMacros({ kcal100: "", protein100: "", fat100: "", carbs100: "" });
     setShowCustom(false);
+  }
+
+  /** Продукт найден по штрихкоду — сразу подставляем в форму своего продукта. */
+  async function handleBarcode(code: string) {
+    setScanning(false);
+    setError(null);
+    try {
+      const found = await api.get<BarcodeLookup>(`/foods/barcode/${code}`);
+      setCustomName(found.name);
+      setCustomMacros({
+        kcal100: String(found.kcal100),
+        protein100: String(found.protein100),
+        fat100: String(found.fat100),
+        carbs100: String(found.carbs100),
+      });
+      setShowCustom(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось найти продукт по штрихкоду");
+    }
   }
 
   function updateGrams(key: string, grams: number) {
@@ -287,9 +330,14 @@ export default function MealForm({
             ))}
           </div>
         )}
-        <button type="button" className="mt-1 text-xs font-medium text-brand-600" onClick={() => setShowCustom((v) => !v)}>
-          {showCustom ? "Отменить" : "+ Свой продукт вручную"}
-        </button>
+        <div className="mt-1 flex flex-wrap gap-3">
+          <button type="button" className="text-xs font-medium text-brand-600" onClick={() => setShowCustom((v) => !v)}>
+            {showCustom ? "Отменить" : "+ Свой продукт вручную"}
+          </button>
+          <button type="button" className="text-xs font-medium text-brand-600" onClick={() => setScanning(true)}>
+            📷 Сканировать штрихкод
+          </button>
+        </div>
       </div>
 
       {showCustom && (
@@ -330,6 +378,14 @@ export default function MealForm({
               onChange={(e) => setCustomMacros((m) => ({ ...m, carbs100: e.target.value }))}
             />
           </div>
+          <label className="mt-2 flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+            <input
+              type="checkbox"
+              checked={saveToLibrary}
+              onChange={(e) => setSaveToLibrary(e.target.checked)}
+            />
+            Запомнить в моих продуктах (виден только вам)
+          </label>
           <button type="button" className="btn-secondary mt-2 w-full" onClick={addCustom}>
             Добавить в приём пищи
           </button>
@@ -421,6 +477,12 @@ export default function MealForm({
       <button type="button" className="btn-primary w-full" disabled={submitting} onClick={handleSubmit}>
         {submitting ? "Сохраняем…" : editing ? "Сохранить изменения" : "Сохранить приём пищи"}
       </button>
+
+      {scanning && (
+        <Modal title="Сканировать штрихкод" onClose={() => setScanning(false)}>
+          <BarcodeScanner onDetected={handleBarcode} onClose={() => setScanning(false)} />
+        </Modal>
+      )}
     </div>
   );
 }

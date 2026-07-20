@@ -49,6 +49,18 @@ export interface FoodItem {
   createdByUserId: string | null;
 }
 
+/** Данные продукта, найденного по штрихкоду в открытой базе Open Food Facts. */
+export interface BarcodeLookup {
+  barcode: string;
+  name: string;
+  quantity: string | null;
+  kcal100: number;
+  protein100: number;
+  fat100: number;
+  carbs100: number;
+  source: string;
+}
+
 export interface MealItem {
   id: string;
   foodItemId: string | null;

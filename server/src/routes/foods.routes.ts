@@ -35,6 +35,72 @@ router.get(
   })
 );
 
+/**
+ * Поиск продукта по штрихкоду с упаковки в открытой базе Open Food Facts.
+ * Ничего не сохраняет — возвращает данные, чтобы пользователь их проверил
+ * и при желании добавил в свою библиотеку.
+ */
+router.get(
+  "/barcode/:code",
+  asyncHandler(async (req, res) => {
+    const code = req.params.code.replace(/\D/g, "");
+    if (code.length < 8 || code.length > 14) {
+      throw new HttpError(400, "Штрихкод должен содержать от 8 до 14 цифр");
+    }
+
+    const url =
+      `https://world.openfoodfacts.org/api/v2/product/${code}.json` +
+      `?fields=product_name,product_name_ru,brands,quantity,nutriments`;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    let payload: any;
+    try {
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: { "User-Agent": "XE-Dnevnik/1.0 (diabetes diary app)" },
+      });
+      if (!response.ok) throw new Error(`status ${response.status}`);
+      payload = await response.json();
+    } catch (err) {
+      throw new HttpError(
+        503,
+        "Не удалось связаться с базой продуктов. Проверьте интернет и попробуйте ещё раз."
+      );
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    if (payload?.status !== 1 || !payload.product) {
+      throw new HttpError(404, "Продукт с таким штрихкодом не найден. Введите данные вручную.");
+    }
+
+    const p = payload.product;
+    const n = p.nutriments ?? {};
+    const num = (v: unknown) => {
+      const parsed = typeof v === "number" ? v : Number(v);
+      return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed * 10) / 10 : 0;
+    };
+
+    const name = [p.product_name_ru || p.product_name, p.brands?.split(",")[0]?.trim()]
+      .filter(Boolean)
+      .join(", ")
+      .slice(0, 150);
+
+    res.json({
+      barcode: code,
+      name: name || `Продукт ${code}`,
+      quantity: p.quantity ?? null,
+      kcal100: num(n["energy-kcal_100g"]),
+      protein100: num(n["proteins_100g"]),
+      fat100: num(n["fat_100g"]),
+      carbs100: num(n["carbohydrates_100g"]),
+      // Данные вносят сами пользователи Open Food Facts — их стоит перепроверить.
+      source: "Open Food Facts",
+    });
+  })
+);
+
 router.post(
   "/",
   asyncHandler(async (req, res) => {

@@ -1,6 +1,8 @@
 import { FormEvent, useEffect, useState } from "react";
-import { api } from "../api/client";
-import { FoodItem } from "../types";
+import { api, ApiError } from "../api/client";
+import BarcodeScanner from "../components/BarcodeScanner";
+import Modal from "../components/Modal";
+import { BarcodeLookup, FoodItem } from "../types";
 
 const emptyForm = { name: "", category: "Другое", kcal100: "", protein100: "", fat100: "", carbs100: "" };
 
@@ -11,6 +13,33 @@ export default function FoodsPage() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [scanStatus, setScanStatus] = useState<string | null>(null);
+  const [fromBarcode, setFromBarcode] = useState<BarcodeLookup | null>(null);
+
+  /** Нашли продукт по коду — подставляем в форму, чтобы пользователь проверил. */
+  async function handleBarcode(code: string) {
+    setScanning(false);
+    setScanStatus("Ищем продукт по штрихкоду…");
+    setError(null);
+    try {
+      const found = await api.get<BarcodeLookup>(`/foods/barcode/${code}`);
+      setForm({
+        name: found.name,
+        category: "По штрихкоду",
+        kcal100: String(found.kcal100),
+        protein100: String(found.protein100),
+        fat100: String(found.fat100),
+        carbs100: String(found.carbs100),
+      });
+      setFromBarcode(found);
+      setShowForm(true);
+      setScanStatus(null);
+    } catch (err) {
+      setScanStatus(null);
+      setError(err instanceof ApiError ? err.message : "Не удалось найти продукт по штрихкоду");
+    }
+  }
 
   async function search(q: string) {
     setLoading(true);
@@ -42,6 +71,7 @@ export default function FoodsPage() {
       });
       setForm(emptyForm);
       setShowForm(false);
+      setFromBarcode(null);
       search(query);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось добавить продукт");
@@ -55,15 +85,40 @@ export default function FoodsPage() {
 
   return (
     <div>
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Продукты</h1>
-        <button className="btn-primary" onClick={() => setShowForm((v) => !v)}>
-          {showForm ? "Отменить" : "+ Свой продукт"}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button className="btn-secondary" onClick={() => setScanning(true)}>
+            📷 Сканировать штрихкод
+          </button>
+          <button className="btn-primary" onClick={() => setShowForm((v) => !v)}>
+            {showForm ? "Отменить" : "+ Свой продукт"}
+          </button>
+        </div>
       </div>
+
+      <p className="mb-5 text-sm text-slate-500 dark:text-slate-400">
+        Здесь общий справочник и <strong>ваши личные продукты</strong> — добавленные вами видны
+        только вам.
+      </p>
+
+      {scanStatus && <p className="mb-3 text-sm text-brand-600">{scanStatus}</p>}
 
       {showForm && (
         <form onSubmit={handleAdd} className="card mb-6 flex flex-col gap-3">
+          {fromBarcode && (
+            <div className="rounded-lg border border-brand-200 bg-brand-50 p-3 text-xs dark:border-brand-900/50 dark:bg-brand-900/20">
+              <p className="font-medium text-brand-800 dark:text-brand-300">
+                Найдено по штрихкоду {fromBarcode.barcode}
+                {fromBarcode.quantity ? ` · ${fromBarcode.quantity}` : ""}
+              </p>
+              <p className="mt-1 text-slate-600 dark:text-slate-300">
+                Источник — открытая база {fromBarcode.source}, данные вносят пользователи.
+                <strong> Обязательно сверьте БЖУ с этикеткой</strong> перед сохранением: от углеводов
+                зависит расчёт дозы инсулина.
+              </p>
+            </div>
+          )}
           <input
             className="input"
             placeholder="Название продукта"
@@ -150,6 +205,12 @@ export default function FoodsPage() {
         ))}
         {!loading && foods.length === 0 && <p className="text-sm text-slate-400">Ничего не найдено</p>}
       </div>
+
+      {scanning && (
+        <Modal title="Сканировать штрихкод" onClose={() => setScanning(false)}>
+          <BarcodeScanner onDetected={handleBarcode} onClose={() => setScanning(false)} />
+        </Modal>
+      )}
     </div>
   );
 }
