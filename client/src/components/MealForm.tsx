@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { lookupBarcode } from "../api/barcode";
+import { nowLocalInput, toLocalInput } from "../utils/datetime";
 import TrendPicker from "./TrendPicker";
 import BarcodeScanner from "./BarcodeScanner";
 import Modal from "./Modal";
@@ -17,11 +18,6 @@ interface DraftItem {
   carbs100: number;
 }
 
-function toLocalInput(iso: string): string {
-  const d = new Date(iso);
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-}
-
 export default function MealForm({
   profile,
   onCreated,
@@ -33,7 +29,7 @@ export default function MealForm({
   editing?: MealEntry;
 }) {
   const [eatenAt, setEatenAt] = useState(() =>
-    editing ? toLocalInput(editing.eatenAt) : new Date().toISOString().slice(0, 16)
+    editing ? toLocalInput(editing.eatenAt) : nowLocalInput()
   );
   const [note, setNote] = useState(editing?.note ?? "");
   const [glucose, setGlucose] = useState("");

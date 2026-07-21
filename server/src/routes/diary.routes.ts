@@ -383,9 +383,29 @@ router.get(
 router.get(
   "/day",
   asyncHandler(async (req, res) => {
-    const dateParam = (req.query.date as string) ?? new Date().toISOString().slice(0, 10);
-    const dayStart = new Date(`${dateParam}T00:00:00`);
-    const dayEnd = new Date(`${dateParam}T23:59:59.999`);
+    // Границы суток считает клиент в своём часовом поясе и присылает явно:
+    // сервер работает по UTC, и «сегодня» у него не совпадает с «сегодня»
+    // пользователя (например, в Москве расхождение 3 часа).
+    const fromParam = req.query.from as string | undefined;
+    const toParam = req.query.to as string | undefined;
+
+    let dayStart: Date;
+    let dayEnd: Date;
+    let dateParam: string;
+
+    if (fromParam && toParam) {
+      dayStart = new Date(fromParam);
+      dayEnd = new Date(toParam);
+      if (Number.isNaN(dayStart.getTime()) || Number.isNaN(dayEnd.getTime())) {
+        throw new HttpError(400, "Некорректный диапазон дат");
+      }
+      dateParam = fromParam.slice(0, 10);
+    } else {
+      // Запасной вариант для старых версий приложения.
+      dateParam = (req.query.date as string) ?? new Date().toISOString().slice(0, 10);
+      dayStart = new Date(`${dateParam}T00:00:00.000Z`);
+      dayEnd = new Date(`${dateParam}T23:59:59.999Z`);
+    }
 
     const [meals, glucose, insulin] = await Promise.all([
       prisma.mealEntry.findMany({

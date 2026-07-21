@@ -2,6 +2,7 @@ import { useState } from "react";
 import { api } from "../api/client";
 import { useAuthStore } from "../store/authStore";
 import TrendPicker from "./TrendPicker";
+import { nowLocalInput, toLocalInput } from "../utils/datetime";
 import { GlucoseContext, GlucoseReading, GlucoseTrend } from "../types";
 
 const contextLabels: Record<GlucoseContext, string> = {
@@ -12,12 +13,6 @@ const contextLabels: Record<GlucoseContext, string> = {
   NIGHT: "Ночью",
   RANDOM: "Случайное измерение",
 };
-
-/** Дата из ISO в формат для input[type=datetime-local] с учётом часового пояса. */
-function toLocalInput(iso: string): string {
-  const d = new Date(iso);
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-}
 
 export default function GlucoseForm({
   onCreated,
@@ -31,7 +26,7 @@ export default function GlucoseForm({
 }) {
   const profile = useAuthStore((s) => s.profile);
   const [measuredAt, setMeasuredAt] = useState(() =>
-    editing ? toLocalInput(editing.measuredAt) : new Date().toISOString().slice(0, 16)
+    editing ? toLocalInput(editing.measuredAt) : nowLocalInput()
   );
   const [value, setValue] = useState(editing ? String(editing.value) : "");
   const [context, setContext] = useState<GlucoseContext>(

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api } from "../api/client";
+import { nowLocalInput, toLocalInput } from "../utils/datetime";
 import { InsulinCalcResult, InsulinDose, InsulinType, MealEntry } from "../types";
 
 const typeLabels: Record<InsulinType, string> = {
@@ -7,11 +8,6 @@ const typeLabels: Record<InsulinType, string> = {
   BOLUS_CORRECTION: "Коррекция (без еды)",
   BASAL: "Базальный (продлённый)",
 };
-
-function toLocalInput(iso: string): string {
-  const d = new Date(iso);
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-}
 
 export default function InsulinDoseForm({
   recentMeals,
@@ -25,7 +21,7 @@ export default function InsulinDoseForm({
 }) {
   const [type, setType] = useState<InsulinType>(editing?.type ?? "BOLUS_MEAL");
   const [givenAt, setGivenAt] = useState(() =>
-    editing ? toLocalInput(editing.givenAt) : new Date().toISOString().slice(0, 16)
+    editing ? toLocalInput(editing.givenAt) : nowLocalInput()
   );
   const [mealEntryId, setMealEntryId] = useState<string>(editing?.mealEntryId ?? "");
   const [carbsGrams, setCarbsGrams] = useState("");

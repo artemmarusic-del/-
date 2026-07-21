@@ -8,6 +8,7 @@ import Modal from "../components/Modal";
 import MealForm from "../components/MealForm";
 import GlucoseForm from "../components/GlucoseForm";
 import InsulinDoseForm from "../components/InsulinDoseForm";
+import { localDayRange } from "../utils/datetime";
 import { CoefficientAdjustment, DaySummary, StatsSummary } from "../types";
 
 type ActiveModal = "meal" | "glucose" | "insulin" | null;
@@ -20,8 +21,12 @@ export default function DashboardPage() {
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
 
   async function refresh() {
+    // «Сегодня» считаем в часовом поясе пользователя, а не сервера.
+    const today = localDayRange();
     const [d, s, p] = await Promise.all([
-      api.get<DaySummary>("/diary/day"),
+      api.get<DaySummary>(
+        `/diary/day?from=${encodeURIComponent(today.from)}&to=${encodeURIComponent(today.to)}`
+      ),
       api.get<StatsSummary>("/stats/summary?days=7"),
       api.get<CoefficientAdjustment[]>("/adaptation/suggestions"),
     ]);
