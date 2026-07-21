@@ -44,6 +44,8 @@ export default function MealForm({
   const [calculating, setCalculating] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [saveToLibrary, setSaveToLibrary] = useState(true);
+  const [scanStatus, setScanStatus] = useState<string | null>(null);
+  const [lastCode, setLastCode] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<FoodItem[]>([]);
   const [items, setItems] = useState<DraftItem[]>(() =>
@@ -147,9 +149,10 @@ export default function MealForm({
   /** Продукт найден по штрихкоду — сразу подставляем в форму своего продукта. */
   async function handleBarcode(code: string) {
     setScanning(false);
+    setLastCode(code);
     setError(null);
     try {
-      const found = await lookupBarcode(code);
+      const found = await lookupBarcode(code, { onProgress: setScanStatus });
       setCustomName(found.name);
       setCustomMacros({
         kcal100: String(found.kcal100),
@@ -158,7 +161,10 @@ export default function MealForm({
         carbs100: String(found.carbs100),
       });
       setShowCustom(true);
+      setScanStatus(null);
+      setLastCode(null);
     } catch (err) {
+      setScanStatus(null);
       setError(err instanceof Error ? err.message : "Не удалось найти продукт по штрихкоду");
     }
   }
@@ -473,7 +479,40 @@ export default function MealForm({
       </div>
       )}
 
-      {error && <p className="text-sm text-accent-600">{error}</p>}
+      {scanStatus && (
+        <p className="flex items-center gap-2 text-sm text-brand-600">
+          <span className="inline-block h-3 w-3 animate-pulse rounded-full bg-brand-500" />
+          {scanStatus}
+        </p>
+      )}
+
+      {error && (
+        <div className="rounded-lg border border-accent-200 bg-accent-50 p-3 text-sm dark:border-accent-900/50 dark:bg-accent-900/20">
+          <p className="text-accent-700 dark:text-accent-300">{error}</p>
+          {lastCode && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="btn-primary !px-3 !py-1.5 text-xs"
+                onClick={() => handleBarcode(lastCode)}
+              >
+                🔄 Повторить
+              </button>
+              <button
+                type="button"
+                className="btn-secondary !px-3 !py-1.5 text-xs"
+                onClick={() => {
+                  setError(null);
+                  setLastCode(null);
+                  setShowCustom(true);
+                }}
+              >
+                Ввести вручную
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       <button type="button" className="btn-primary w-full" disabled={submitting} onClick={handleSubmit}>
         {submitting ? "Сохраняем…" : editing ? "Сохранить изменения" : "Сохранить приём пищи"}

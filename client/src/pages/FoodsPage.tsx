@@ -17,14 +17,16 @@ export default function FoodsPage() {
   const [scanning, setScanning] = useState(false);
   const [scanStatus, setScanStatus] = useState<string | null>(null);
   const [fromBarcode, setFromBarcode] = useState<BarcodeLookup | null>(null);
+  /** Последний код — чтобы можно было повторить поиск одной кнопкой. */
+  const [lastCode, setLastCode] = useState<string | null>(null);
 
   /** Нашли продукт по коду — подставляем в форму, чтобы пользователь проверил. */
   async function handleBarcode(code: string) {
     setScanning(false);
-    setScanStatus("Ищем продукт по штрихкоду…");
+    setLastCode(code);
     setError(null);
     try {
-      const found = await lookupBarcode(code);
+      const found = await lookupBarcode(code, { onProgress: setScanStatus });
       setForm({
         name: found.name,
         category: "По штрихкоду",
@@ -36,6 +38,7 @@ export default function FoodsPage() {
       setFromBarcode(found);
       setShowForm(true);
       setScanStatus(null);
+      setLastCode(null);
     } catch (err) {
       setScanStatus(null);
       setError(err instanceof Error ? err.message : "Не удалось найти продукт по штрихкоду");
@@ -103,7 +106,38 @@ export default function FoodsPage() {
         только вам.
       </p>
 
-      {scanStatus && <p className="mb-3 text-sm text-brand-600">{scanStatus}</p>}
+      {scanStatus && (
+        <p className="mb-3 flex items-center gap-2 text-sm text-brand-600">
+          <span className="inline-block h-3 w-3 animate-pulse rounded-full bg-brand-500" />
+          {scanStatus}
+        </p>
+      )}
+
+      {/* Ошибка поиска по штрихкоду — с кнопкой повторить */}
+      {error && !showForm && (
+        <div className="mb-4 rounded-xl border border-accent-200 bg-accent-50 p-3 text-sm dark:border-accent-900/50 dark:bg-accent-900/20">
+          <p className="text-accent-700 dark:text-accent-300">{error}</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {lastCode && (
+              <button
+                className="btn-primary !px-3 !py-1.5 text-xs"
+                onClick={() => handleBarcode(lastCode)}
+              >
+                🔄 Повторить
+              </button>
+            )}
+            <button
+              className="btn-secondary !px-3 !py-1.5 text-xs"
+              onClick={() => {
+                setError(null);
+                setShowForm(true);
+              }}
+            >
+              Ввести вручную
+            </button>
+          </div>
+        </div>
+      )}
 
       {showForm && (
         <form onSubmit={handleAdd} className="card mb-6 flex flex-col gap-3">
