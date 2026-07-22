@@ -387,14 +387,14 @@ export default function DiaryPage() {
       <div className="card !p-0 overflow-x-auto">
         <table className="w-full min-w-[640px] text-sm">
           <thead>
-            <tr className="border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-400 dark:border-slate-800">
-              <th className="px-4 py-3 font-medium">Дата</th>
-              <th className="px-4 py-3 font-medium">Время</th>
-              <th className="px-4 py-3 font-medium">Сахар, ммоль/л</th>
-              <th className="px-4 py-3 font-medium">Тенденция</th>
-              <th className="px-4 py-3 font-medium">Инсулин</th>
-              <th className="px-4 py-3 font-medium">Приём пищи</th>
-              <th className="px-2 py-3"></th>
+            <tr className="border-b border-slate-200 bg-slate-50/80 text-left text-xs uppercase tracking-wide text-slate-500 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-400">
+              <th className="px-4 py-3 font-semibold">Дата</th>
+              <th className="px-4 py-3 font-semibold">Время</th>
+              <th className="px-4 py-3 font-semibold">Сахар</th>
+              <th className="px-4 py-3 font-semibold">Тенденция</th>
+              <th className="px-4 py-3 font-semibold">Инсулин</th>
+              <th className="px-4 py-3 font-semibold">Приём пищи</th>
+              <th className="px-2 py-3 text-right font-semibold">Действия</th>
             </tr>
           </thead>
           <tbody>
@@ -407,10 +407,28 @@ export default function DiaryPage() {
             )}
             {!loading && filteredRows.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-6 text-center text-slate-400">
-                  {search.trim()
-                    ? `Ничего не найдено по запросу «${search.trim()}»`
-                    : "Нет записей за выбранный период. Добавьте приём пищи, замер сахара или дозу инсулина."}
+                <td colSpan={7} className="px-4 py-10 text-center">
+                  {search.trim() ? (
+                    <div className="flex flex-col items-center gap-2">
+                      <span className="text-3xl">🔍</span>
+                      <p className="text-sm text-slate-500 dark:text-slate-400">
+                        Ничего не найдено по запросу «{search.trim()}»
+                      </p>
+                      <button className="btn-ghost !py-1.5 text-xs" onClick={() => setSearch("")}>
+                        Очистить поиск
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center gap-3">
+                      <span className="text-3xl">📔</span>
+                      <p className="text-sm text-slate-500 dark:text-slate-400">
+                        За этот период записей пока нет
+                      </p>
+                      <button className="btn-primary" onClick={() => setActiveModal("meal")}>
+                        🍽️ Добавить первую запись
+                      </button>
+                    </div>
+                  )}
                 </td>
               </tr>
             )}
