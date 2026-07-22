@@ -9,6 +9,15 @@ export interface ExportRow {
   meal: string;
 }
 
+/** Данные для шапки документа: чей дневник и за какой период. */
+export interface ExportMeta {
+  profileName?: string;
+  periodLabel?: string;
+}
+
+const BRAND_GREEN = "#1A7A5B";
+const BRAND_DARK = "#0E5B42";
+
 const HEADER = ["Дата", "Время", "Сахар, ммоль/л", "Тенденция", "Инсулин", "Приём пищи"];
 
 function downloadBlob(blob: Blob, filename: string) {
@@ -42,7 +51,16 @@ export function exportToExcel(rows: ExportRow[]) {
   XLSX.writeFile(wb, `${baseFilename()}.xlsx`);
 }
 
-export function exportToWord(rows: ExportRow[]) {
+/** Подзаголовок документа: чей дневник, за какой период и когда выгружен. */
+function subtitle(meta: ExportMeta = {}): string {
+  const parts: string[] = [];
+  if (meta.profileName) parts.push(`Профиль: ${meta.profileName}`);
+  if (meta.periodLabel) parts.push(`Период: ${meta.periodLabel}`);
+  parts.push(`Выгружено: ${new Date().toLocaleString("ru-RU")}`);
+  return parts.join(" · ");
+}
+
+export function exportToWord(rows: ExportRow[], meta: ExportMeta = {}) {
   const tableRows = rows
     .map(
       (r) => `<tr>
@@ -61,20 +79,23 @@ export function exportToWord(rows: ExportRow[]) {
   <meta charset="utf-8" />
   <title>Дневник самоконтроля</title>
   <style>
-    body { font-family: "Segoe UI", Arial, sans-serif; }
-    h1 { font-size: 16pt; }
-    table { border-collapse: collapse; width: 100%; font-size: 10pt; }
-    th, td { border: 1px solid #999; padding: 4pt 6pt; text-align: left; vertical-align: top; }
-    th { background: #e8f5f0; }
+    body { font-family: "Segoe UI", Arial, sans-serif; color: #1f2937; }
+    h1 { font-size: 16pt; color: ${BRAND_DARK}; margin-bottom: 2pt; }
+    .sub { color: #6b7280; font-size: 9pt; margin-top: 0; }
+    table { border-collapse: collapse; width: 100%; font-size: 10pt; margin-top: 10pt; }
+    th, td { border: 1px solid #cbd5e1; padding: 4pt 6pt; text-align: left; vertical-align: top; }
+    th { background: ${BRAND_GREEN}; color: #fff; }
+    .note { margin-top: 12pt; font-size: 8pt; color: #6b7280; }
   </style>
 </head>
 <body>
-  <h1>Дневник самоконтроля</h1>
-  <p>Выгружено: ${new Date().toLocaleString("ru-RU")}</p>
+  <h1>ХЕ.Дневник — дневник самоконтроля</h1>
+  <p class="sub">${escapeHtml(subtitle(meta))}</p>
   <table>
     <thead><tr>${HEADER.map((h) => `<th>${h}</th>`).join("")}</tr></thead>
     <tbody>${tableRows}</tbody>
   </table>
+  <p class="note">Документ сформирован приложением «ХЕ.Дневник». Не является медицинским заключением.</p>
 </body>
 </html>`;
 
@@ -82,14 +103,100 @@ export function exportToWord(rows: ExportRow[]) {
   downloadBlob(blob, `${baseFilename()}.doc`);
 }
 
-export function exportToTxt(rows: ExportRow[]) {
+export function exportToTxt(rows: ExportRow[], meta: ExportMeta = {}) {
   const all = [HEADER, ...rows.map((r) => [r.date, r.time, r.sugar, r.trend, r.insulin, r.meal])];
   const widths = HEADER.map((_, col) => Math.max(...all.map((row) => (row[col] ?? "").length)));
   const lines = all.map((row) => row.map((cell, col) => (cell ?? "").padEnd(widths[col] + 2)).join("").trimEnd());
   lines.splice(1, 0, widths.map((w) => "-".repeat(w + 2)).join("").trimEnd());
-  const text = `Дневник самоконтроля (выгружено ${new Date().toLocaleString("ru-RU")})\r\n\r\n${lines.join("\r\n")}\r\n`;
+  const text =
+    `ХЕ.Дневник — дневник самоконтроля\r\n${subtitle(meta)}\r\n\r\n` +
+    `${lines.join("\r\n")}\r\n`;
   const blob = new Blob(["﻿" + text], { type: "text/plain;charset=utf-8" });
   downloadBlob(blob, `${baseFilename()}.txt`);
+}
+
+/**
+ * PDF — формат «для врача»: фирменная шапка, таблица с повторяющимся
+ * заголовком на каждой странице, нумерация страниц.
+ *
+ * pdfmake грузится по требованию: библиотека со встроенным шрифтом весит
+ * заметно, и тянуть её при запуске приложения незачем. Шрифт Roboto из
+ * поставки pdfmake содержит кириллицу.
+ */
+export async function exportToPdf(rows: ExportRow[], meta: ExportMeta = {}) {
+  const [pdfMakeModule, vfsModule] = await Promise.all([
+    import("pdfmake/build/pdfmake"),
+    import("pdfmake/build/vfs_fonts"),
+  ]);
+  const pdfMake: any = (pdfMakeModule as any).default ?? pdfMakeModule;
+  const vfs: any = (vfsModule as any).default ?? vfsModule;
+
+  if (typeof pdfMake.addVirtualFileSystem === "function") {
+    pdfMake.addVirtualFileSystem(vfs);
+  } else {
+    pdfMake.vfs = vfs?.pdfMake?.vfs ?? vfs;
+  }
+  pdfMake.fonts = {
+    Roboto: {
+      normal: "Roboto-Regular.ttf",
+      bold: "Roboto-Medium.ttf",
+      italics: "Roboto-Italic.ttf",
+      bolditalics: "Roboto-MediumItalic.ttf",
+    },
+  };
+
+  const body = [
+    HEADER.map((h) => ({ text: h, bold: true, color: "#FFFFFF", fontSize: 9 })),
+    ...rows.map((r) => [
+      { text: r.date, fontSize: 9 },
+      { text: r.time, fontSize: 9 },
+      { text: r.sugar, fontSize: 10, bold: true, alignment: "center" },
+      { text: r.trend, fontSize: 9 },
+      { text: r.insulin, fontSize: 9 },
+      { text: r.meal, fontSize: 8 },
+    ]),
+  ];
+
+  const doc = {
+    pageSize: "A4",
+    pageOrientation: "landscape",
+    pageMargins: [28, 30, 28, 40] as [number, number, number, number],
+    defaultStyle: { font: "Roboto" },
+    content: [
+      { text: "ХЕ.Дневник — дневник самоконтроля", fontSize: 16, bold: true, color: BRAND_DARK },
+      { text: subtitle(meta), fontSize: 9, color: "#6B7280", margin: [0, 2, 0, 10] },
+      {
+        table: {
+          headerRows: 1,
+          widths: ["auto", "auto", "auto", "auto", "auto", "*"],
+          body,
+        },
+        layout: {
+          fillColor: (rowIndex: number) =>
+            rowIndex === 0 ? BRAND_GREEN : rowIndex % 2 === 0 ? "#F4FAF7" : null,
+          hLineColor: () => "#CBD5E1",
+          vLineColor: () => "#CBD5E1",
+          hLineWidth: () => 0.5,
+          vLineWidth: () => 0.5,
+        },
+      },
+      {
+        text: "Документ сформирован приложением «ХЕ.Дневник». Не является медицинским заключением.",
+        fontSize: 7,
+        color: "#9CA3AF",
+        margin: [0, 12, 0, 0],
+      },
+    ],
+    footer: (currentPage: number, pageCount: number) => ({
+      text: `${currentPage} / ${pageCount}`,
+      alignment: "center",
+      fontSize: 8,
+      color: "#9CA3AF",
+      margin: [0, 12, 0, 0],
+    }),
+  };
+
+  pdfMake.createPdf(doc).download(`${baseFilename()}.pdf`);
 }
 
 function escapeHtml(s: string): string {

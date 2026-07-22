@@ -62,10 +62,10 @@ export default function DashboardPage() {
           <button className="btn-primary" onClick={() => setActiveModal("meal")}>
             🍽️ Приём пищи
           </button>
-          <button className="btn-secondary" onClick={() => setActiveModal("glucose")}>
+          <button className="btn-primary" onClick={() => setActiveModal("glucose")}>
             🩸 Глюкоза
           </button>
-          <button className="btn-secondary" onClick={() => setActiveModal("insulin")}>
+          <button className="btn-primary" onClick={() => setActiveModal("insulin")}>
             💉 Инсулин
           </button>
         </div>

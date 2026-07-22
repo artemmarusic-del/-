@@ -7,7 +7,15 @@ import GlucoseForm from "../components/GlucoseForm";
 import InsulinDoseForm from "../components/InsulinDoseForm";
 import { GlucoseReading, GlucoseTrend, InsulinDose, MealEntry } from "../types";
 import { TREND_VIEW } from "../components/TrendPicker";
-import { ExportRow, exportToExcel, exportToTxt, exportToWord } from "../utils/exportDiary";
+import ExportMenu, { ExportFormat } from "../components/ExportMenu";
+import RowActions, { RowAction } from "../components/RowActions";
+import {
+  ExportRow,
+  exportToExcel,
+  exportToPdf,
+  exportToTxt,
+  exportToWord,
+} from "../utils/exportDiary";
 
 type ActiveModal = "meal" | "glucose" | "insulin" | null;
 
@@ -227,6 +235,20 @@ export default function DiaryPage() {
     });
   }, [rows, search]);
 
+  /** Общий обработчик для всех форматов выгрузки. */
+  async function handleExport(format: ExportFormat) {
+    const rowsToExport = buildExportRows();
+    const { from, to } = pageWindow(page, days);
+    const meta = {
+      profileName: profile?.name,
+      periodLabel: `${from.toLocaleDateString("ru-RU")} — ${to.toLocaleDateString("ru-RU")}`,
+    };
+    if (format === "excel") exportToExcel(rowsToExport);
+    else if (format === "word") exportToWord(rowsToExport, meta);
+    else if (format === "txt") exportToTxt(rowsToExport, meta);
+    else if (format === "pdf") await exportToPdf(rowsToExport, meta);
+  }
+
   function buildExportRows(): ExportRow[] {
     return filteredRows.map((row) => {
       const trend = row.glucose ? trends.get(row.glucose.id) ?? null : null;
@@ -243,6 +265,43 @@ export default function DiaryPage() {
             : "",
       };
     });
+  }
+
+  /** Что можно сделать со строкой — зависит от того, что в ней есть. */
+  function buildRowActions(row: Row): RowAction[] {
+    const actions: RowAction[] = [];
+    if (row.meal) {
+      actions.push({
+        id: "meal",
+        icon: "🍽️",
+        label: "Изменить приём пищи",
+        onSelect: () => setEditing({ kind: "meal", meal: row.meal! }),
+      });
+    }
+    if (row.glucose) {
+      actions.push({
+        id: "glucose",
+        icon: "🩸",
+        label: "Изменить сахар",
+        onSelect: () => setEditing({ kind: "glucose", reading: row.glucose! }),
+      });
+    }
+    if (row.insulin) {
+      actions.push({
+        id: "insulin",
+        icon: "💉",
+        label: "Изменить дозу инсулина",
+        onSelect: () => setEditing({ kind: "insulin", dose: row.insulin! }),
+      });
+    }
+    actions.push({
+      id: "delete",
+      icon: "🗑️",
+      label: "Удалить запись",
+      danger: true,
+      onSelect: () => deleteRow(row),
+    });
+    return actions;
   }
 
   async function deleteRow(row: Row) {
@@ -288,10 +347,10 @@ export default function DiaryPage() {
           <button className="btn-primary" onClick={() => setActiveModal("meal")}>
             🍽️ Приём пищи
           </button>
-          <button className="btn-secondary" onClick={() => setActiveModal("glucose")}>
+          <button className="btn-primary" onClick={() => setActiveModal("glucose")}>
             🩸 Глюкоза
           </button>
-          <button className="btn-secondary" onClick={() => setActiveModal("insulin")}>
+          <button className="btn-primary" onClick={() => setActiveModal("insulin")}>
             💉 Инсулин
           </button>
         </div>
@@ -316,30 +375,7 @@ export default function DiaryPage() {
             </button>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium uppercase tracking-wide text-slate-400">Сохранить как:</span>
-          <button
-            className="btn-ghost !px-3 !py-1.5 text-xs"
-            disabled={filteredRows.length === 0}
-            onClick={() => exportToExcel(buildExportRows())}
-          >
-            📊 Excel
-          </button>
-          <button
-            className="btn-ghost !px-3 !py-1.5 text-xs"
-            disabled={filteredRows.length === 0}
-            onClick={() => exportToWord(buildExportRows())}
-          >
-            📄 Word
-          </button>
-          <button
-            className="btn-ghost !px-3 !py-1.5 text-xs"
-            disabled={filteredRows.length === 0}
-            onClick={() => exportToTxt(buildExportRows())}
-          >
-            📝 TXT
-          </button>
-        </div>
+        <ExportMenu disabled={filteredRows.length === 0} onExport={handleExport} />
       </div>
 
       {search.trim() && !loading && (
@@ -449,41 +485,8 @@ export default function DiaryPage() {
                       )}
                     </td>
                     <td className="whitespace-nowrap px-2 py-2.5 text-right">
-                      {/* Правка: у объединённой строки своя кнопка на каждую часть */}
-                      {row.meal && (
-                        <button
-                          onClick={() => setEditing({ kind: "meal", meal: row.meal! })}
-                          title="Изменить приём пищи"
-                          className="rounded px-1 text-slate-400 transition hover:text-brand-600"
-                        >
-                          🍽️
-                        </button>
-                      )}
-                      {row.glucose && (
-                        <button
-                          onClick={() => setEditing({ kind: "glucose", reading: row.glucose! })}
-                          title="Изменить замер сахара"
-                          className="rounded px-1 text-slate-400 transition hover:text-brand-600"
-                        >
-                          🩸
-                        </button>
-                      )}
-                      {row.insulin && (
-                        <button
-                          onClick={() => setEditing({ kind: "insulin", dose: row.insulin! })}
-                          title="Изменить дозу инсулина"
-                          className="rounded px-1 text-slate-400 transition hover:text-brand-600"
-                        >
-                          💉
-                        </button>
-                      )}
-                      <button
-                        onClick={() => deleteRow(row)}
-                        title="Удалить запись"
-                        className="rounded px-1.5 text-slate-300 transition hover:text-accent-500 dark:text-slate-600 dark:hover:text-accent-400"
-                      >
-                        ✕
-                      </button>
+                      {/* Одна шестерёнка на строку: внутри — всё, что можно изменить */}
+                      <RowActions actions={buildRowActions(row)} />
                     </td>
                   </tr>
                 );

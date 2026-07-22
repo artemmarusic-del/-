@@ -1,6 +1,7 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { useAuthStore } from "../store/authStore";
 import ProfileSwitcher from "./ProfileSwitcher";
+import Logo from "./Logo";
 
 const navItems = [
   { to: "/", label: "Сегодня", icon: "🏠", end: true },
@@ -17,10 +18,8 @@ export default function Layout() {
     <div className="min-h-screen bg-gradient-to-b from-brand-50/60 to-slate-50 dark:from-slate-950 dark:to-slate-950">
       <div className="mx-auto flex max-w-6xl">
         <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-slate-100 bg-white/70 px-4 py-6 backdrop-blur dark:border-slate-800 dark:bg-slate-900/60 md:flex">
-          <div className="mb-8 flex items-center gap-2 px-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-600 text-lg font-bold text-white">
-              ХЕ
-            </div>
+          <div className="mb-8 flex items-center gap-2.5 px-2">
+            <Logo size={40} />
             <div>
               <div className="text-sm font-bold leading-tight text-slate-800 dark:text-slate-100">ХЕ.Дневник</div>
               <div className="text-xs text-slate-400">учёт диабета</div>
@@ -62,9 +61,7 @@ export default function Layout() {
         <div className="flex min-h-screen w-full flex-col">
           <header className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white/80 px-4 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-900/70 md:hidden">
             <div className="flex min-w-0 flex-1 items-center gap-2">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-sm font-bold text-white">
-                ХЕ
-              </div>
+              <Logo size={32} className="shrink-0" />
               <div className="min-w-0 max-w-[190px] flex-1">
                 <ProfileSwitcher compact />
               </div>

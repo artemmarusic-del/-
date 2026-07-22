@@ -1,5 +1,6 @@
 import { ReactNode, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import Logo from "../components/Logo";
 
 // Файлы лежат в client/public/files/ — папка намеренно называется не так,
 // как маршрут страницы /downloads, иначе статика перехватывает адрес.
@@ -53,9 +54,7 @@ export default function DownloadsPage() {
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
       <div className="mb-6 flex items-center gap-2">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-600 text-sm font-bold text-white">
-          ХЕ
-        </div>
+        <Logo size={36} />
         <Link to="/" className="font-bold text-slate-800 hover:underline dark:text-slate-100">
           ХЕ.Дневник
         </Link>
