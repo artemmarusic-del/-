@@ -116,34 +116,68 @@ export function exportToTxt(rows: ExportRow[], meta: ExportMeta = {}) {
 }
 
 /**
+ * Подгружает pdfmake готовыми файлами из /pdf/ вместо импорта через сборщик.
+ *
+ * Библиотека со встроенным шрифтом весит около 1.9 МБ, и её обработка при
+ * сборке съедала слишком много памяти (бесплатный сервер не справлялся).
+ * Готовые файлы лежат у нас же на сайте и подключаются только тогда,
+ * когда пользователь действительно выбрал PDF.
+ */
+let pdfMakePromise: Promise<any> | null = null;
+
+function loadScript(src: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>(`script[src="${src}"]`);
+    if (existing) {
+      if (existing.dataset.loaded === "1") return resolve();
+      existing.addEventListener("load", () => resolve());
+      existing.addEventListener("error", () => reject(new Error(`Не удалось загрузить ${src}`)));
+      return;
+    }
+    const el = document.createElement("script");
+    el.src = src;
+    el.async = true;
+    el.onload = () => {
+      el.dataset.loaded = "1";
+      resolve();
+    };
+    el.onerror = () => reject(new Error(`Не удалось загрузить ${src}`));
+    document.head.appendChild(el);
+  });
+}
+
+async function loadPdfMake(): Promise<any> {
+  if (!pdfMakePromise) {
+    pdfMakePromise = (async () => {
+      // Порядок важен: vfs_fonts сам регистрируется в уже загруженном pdfMake.
+      await loadScript("/pdf/pdfmake.min.js");
+      await loadScript("/pdf/vfs_fonts.js");
+      const pdfMake = (window as any).pdfMake;
+      if (!pdfMake) throw new Error("Библиотека PDF не загрузилась");
+      pdfMake.fonts = {
+        Roboto: {
+          normal: "Roboto-Regular.ttf",
+          bold: "Roboto-Medium.ttf",
+          italics: "Roboto-Italic.ttf",
+          bolditalics: "Roboto-MediumItalic.ttf",
+        },
+      };
+      return pdfMake;
+    })().catch((err) => {
+      pdfMakePromise = null; // разрешаем повторную попытку
+      throw err;
+    });
+  }
+  return pdfMakePromise;
+}
+
+/**
  * PDF — формат «для врача»: фирменная шапка, таблица с повторяющимся
  * заголовком на каждой странице, нумерация страниц.
- *
- * pdfmake грузится по требованию: библиотека со встроенным шрифтом весит
- * заметно, и тянуть её при запуске приложения незачем. Шрифт Roboto из
- * поставки pdfmake содержит кириллицу.
+ * Шрифт Roboto из поставки pdfmake содержит кириллицу.
  */
 export async function exportToPdf(rows: ExportRow[], meta: ExportMeta = {}) {
-  const [pdfMakeModule, vfsModule] = await Promise.all([
-    import("pdfmake/build/pdfmake"),
-    import("pdfmake/build/vfs_fonts"),
-  ]);
-  const pdfMake: any = (pdfMakeModule as any).default ?? pdfMakeModule;
-  const vfs: any = (vfsModule as any).default ?? vfsModule;
-
-  if (typeof pdfMake.addVirtualFileSystem === "function") {
-    pdfMake.addVirtualFileSystem(vfs);
-  } else {
-    pdfMake.vfs = vfs?.pdfMake?.vfs ?? vfs;
-  }
-  pdfMake.fonts = {
-    Roboto: {
-      normal: "Roboto-Regular.ttf",
-      bold: "Roboto-Medium.ttf",
-      italics: "Roboto-Italic.ttf",
-      bolditalics: "Roboto-MediumItalic.ttf",
-    },
-  };
+  const pdfMake = await loadPdfMake();
 
   const body = [
     HEADER.map((h) => ({ text: h, bold: true, color: "#FFFFFF", fontSize: 9 })),
